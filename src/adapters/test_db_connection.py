@@ -6,24 +6,26 @@ check against both GnuCash and analytics databases.
 """
 
 from src.infrastructure.db import SqlAlchemyDatabaseEngineAdapter
+from src.infrastructure.logging.logger import get_app_logger
 
 
 def main() -> None:
     """Run basic connectivity checks against configured databases."""
     adapter = SqlAlchemyDatabaseEngineAdapter()
+    logger = get_app_logger()
 
     gnucash_engine = adapter.get_gnucash_engine()
     analytics_engine = adapter.get_analytics_engine()
 
-    print("GnuCash DB:", gnucash_engine.url)
-    print("Analytics DB:", analytics_engine.url)
+    logger.info(f"GnuCash DB: {gnucash_engine.url}")
+    logger.info(f"Analytics DB: {analytics_engine.url}")
 
     with gnucash_engine.connect() as conn:
         conn.exec_driver_sql("SELECT 1")
     with analytics_engine.connect() as conn:
         conn.exec_driver_sql("SELECT 1")
 
-    print("Both connections are working.")
+    logger.info("Both connections are working.")
 
 
 if __name__ == "__main__":
