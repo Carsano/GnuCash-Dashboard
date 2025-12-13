@@ -8,11 +8,52 @@ This module defines a simple ETL-style use case that:
 """
 
 from dataclasses import dataclass
+from typing import Any
 
 from sqlalchemy import text
+from sqlalchemy.engine import Engine
 
 from src.application.ports.database import DatabaseEnginePort
 from src.infrastructure.logging.logger import get_app_logger
+
+
+SELECT_ACCOUNTS_SQL = text(
+    """
+    SELECT guid, name, account_type, commodity_guid, parent_guid
+    FROM accounts
+    """
+)
+
+INSERT_ACCOUNTS_SQL = text(
+    """
+    INSERT INTO accounts_dim (
+        guid,
+        name,
+        account_type,
+        commodity_guid,
+        parent_guid
+    )
+    VALUES (
+        :guid,
+        :name,
+        :account_type,
+        :commodity_guid,
+        :parent_guid
+    )
+    """
+)
+
+TRUNCATE_ACCOUNTS_SQL = "TRUNCATE TABLE accounts_dim"
+
+CREATE_ACCOUNTS_DIM_SQL = """
+CREATE TABLE IF NOT EXISTS accounts_dim (
+    guid TEXT PRIMARY KEY,
+    name TEXT,
+    account_type TEXT,
+    commodity_guid TEXT,
+    parent_guid TEXT
+)
+"""
 
 
 @dataclass(frozen=True)
@@ -57,75 +98,80 @@ class SyncAccountsUseCase:
         gnucash_engine = self._db_port.get_gnucash_engine()
         analytics_engine = self._db_port.get_analytics_engine()
 
-        self._ensure_analytics_table(analytics_engine)
-
-        select_sql = text(
-            """
-            SELECT guid, name, account_type, commodity_guid, parent_guid
-            FROM accounts
-            """
-        )
-
-        with gnucash_engine.connect() as conn:
-            rows = conn.execute(select_sql).all()
-
-        row_dicts = [dict(row._mapping) for row in rows]
-        source_count = len(row_dicts)
-
-        self._logger.info(
-            "Fetched %d accounts from GnuCash source", source_count
-        )
-
-        insert_sql = text(
-            """
-            INSERT INTO accounts_dim (
-                guid,
-                name,
-                account_type,
-                commodity_guid,
-                parent_guid
-            )
-            VALUES (
-                :guid,
-                :name,
-                :account_type,
-                :commodity_guid,
-                :parent_guid
-            )
-            """
-        )
-
-        with analytics_engine.begin() as conn:
-            conn.exec_driver_sql("TRUNCATE TABLE accounts_dim")
-            if row_dicts:
-                conn.execute(insert_sql, row_dicts)
-
-        self._logger.info(
-            "Inserted %d accounts into analytics.accounts_dim", source_count
+        accounts = self._fetch_source_accounts(gnucash_engine)
+        self._prepare_analytics_destination(analytics_engine)
+        inserted_count = self._refresh_analytics_accounts(
+            analytics_engine,
+            accounts,
         )
 
         return SyncAccountsResult(
-            source_count=source_count,
-            inserted_count=source_count,
+            source_count=len(accounts),
+            inserted_count=inserted_count,
         )
 
-    def _ensure_analytics_table(self, analytics_engine) -> None:
+    def _fetch_source_accounts(
+        self,
+        gnucash_engine: Engine,
+    ) -> list[dict[str, Any]]:
+        """Read accounts from the GnuCash database.
+
+        Args:
+            gnucash_engine: SQLAlchemy engine for the GnuCash backend.
+
+        Returns:
+            list[dict[str, Any]]: Raw account rows converted into dictionaries.
+        """
+        with gnucash_engine.connect() as conn:
+            rows = conn.execute(SELECT_ACCOUNTS_SQL).all()
+
+        accounts = [dict(row._mapping) for row in rows]
+        accounts = sorted(accounts, key=lambda row: row.get("guid", ""))
+        self._logger.info(
+            f"Fetched {len(accounts)} accounts from GnuCash source"
+        )
+        return accounts
+
+    def _prepare_analytics_destination(self, analytics_engine: Engine) -> None:
+        """Ensure the analytics destination can receive data.
+
+        Args:
+            analytics_engine: SQLAlchemy engine for the analytics database.
+        """
+        self._ensure_analytics_table(analytics_engine)
+
+    def _refresh_analytics_accounts(
+        self,
+        analytics_engine: Engine,
+        accounts: list[dict[str, Any]],
+    ) -> int:
+        """Replace analytics accounts with the provided records.
+
+        Args:
+            analytics_engine: SQLAlchemy engine for the analytics database.
+            accounts: Records extracted from the GnuCash source.
+
+        Returns:
+            int: Number of accounts inserted into the destination table.
+        """
+        with analytics_engine.begin() as conn:
+            conn.exec_driver_sql(TRUNCATE_ACCOUNTS_SQL)
+            if accounts:
+                conn.execute(INSERT_ACCOUNTS_SQL, accounts)
+
+        self._logger.info(
+            f"Inserted {len(accounts)} accounts into analytics.accounts_dim"
+        )
+        return len(accounts)
+
+    def _ensure_analytics_table(self, analytics_engine: Engine) -> None:
         """Create the analytics accounts_dim table if it does not exist.
 
         Args:
             analytics_engine: SQLAlchemy engine for the analytics database.
         """
-        create_sql = """
-        CREATE TABLE IF NOT EXISTS accounts_dim (
-            guid TEXT PRIMARY KEY,
-            name TEXT,
-            account_type TEXT,
-            commodity_guid TEXT,
-            parent_guid TEXT
-        )
-        """
         with analytics_engine.begin() as conn:
-            conn.exec_driver_sql(create_sql)
+            conn.exec_driver_sql(CREATE_ACCOUNTS_DIM_SQL)
 
 
 __all__ = ["SyncAccountsUseCase", "SyncAccountsResult"]
