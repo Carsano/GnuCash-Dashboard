@@ -13,13 +13,17 @@ def main() -> None:
     adapter = SqlAlchemyDatabaseEngineAdapter()
 
     gnucash_engine = adapter.get_gnucash_engine()
+    analytics_engine = adapter.get_analytics_engine()
 
     print("GnuCash DB:", gnucash_engine.url)
+    print("Analytics DB:", analytics_engine.url)
 
     with gnucash_engine.connect() as conn:
         conn.exec_driver_sql("SELECT 1")
+    with analytics_engine.connect() as conn:
+        conn.exec_driver_sql("SELECT 1")
 
-    print("GNUCash connection is working.")
+    print("Both connections are working.")
 
 
 if __name__ == "__main__":
