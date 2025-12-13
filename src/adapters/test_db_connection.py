@@ -28,5 +28,5 @@ def main() -> None:
     logger.info("Both connections are working.")
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # pragma: no cover
     main()

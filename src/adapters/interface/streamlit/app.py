@@ -11,12 +11,17 @@ from src.application.use_cases.get_accounts import (
 from src.infrastructure.db import SqlAlchemyDatabaseEngineAdapter
 
 
-@st.cache_data(show_spinner=False)
-def _load_accounts() -> Sequence[AccountDTO]:
+def _fetch_accounts() -> Sequence[AccountDTO]:
     """Fetch accounts using the analytics database."""
     adapter = SqlAlchemyDatabaseEngineAdapter()
     use_case = GetAccountsUseCase(db_port=adapter)
     return use_case.execute()
+
+
+@st.cache_data(show_spinner=False)
+def _load_accounts() -> Sequence[AccountDTO]:
+    """Cached wrapper around _fetch_accounts for Streamlit sessions."""
+    return _fetch_accounts()
 
 
 def main() -> None:
@@ -45,5 +50,5 @@ def main() -> None:
     st.dataframe(data, use_container_width=True, hide_index=True)
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # pragma: no cover
     main()
