@@ -11,8 +11,9 @@ from typing import Optional
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 from sqlalchemy.pool import QueuePool
+import dotenv
 
-from application.ports.database import DatabaseEnginePort
+from src.application.ports.database import DatabaseEnginePort
 
 
 def _get_env_var(name: str) -> str:
@@ -27,6 +28,7 @@ def _get_env_var(name: str) -> str:
     Raises:
         RuntimeError: If the environment variable is missing or empty.
     """
+    dotenv.load_dotenv()
     value = os.getenv(name)
     if not value:
         raise RuntimeError(f"Missing environment variable: {name}")
