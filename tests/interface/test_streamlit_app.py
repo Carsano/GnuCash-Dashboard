@@ -40,6 +40,33 @@ def test_load_accounts_uses_fetch(monkeypatch):
     assert result == fake_accounts
 
 
+def test_fetch_net_worth_summary_invokes_use_case(monkeypatch):
+    """_fetch_net_worth_summary should instantiate the adapter and use case."""
+    fake_summary = SimpleNamespace(asset_total=1, liability_total=2, net_worth=3)
+
+    class _FakeUseCase:
+        def __init__(self, db_port):
+            self.db_port = db_port
+
+        def execute(self, start_date=None, end_date=None):
+            return fake_summary
+
+    monkeypatch.setattr(
+        app,
+        "SqlAlchemyDatabaseEngineAdapter",
+        lambda: "adapter",
+    )
+    monkeypatch.setattr(
+        app,
+        "GetNetWorthSummaryUseCase",
+        lambda db_port: _FakeUseCase(db_port),
+    )
+
+    result = app._fetch_net_worth_summary(start_date=None, end_date=None)
+
+    assert result == fake_summary
+
+
 class _FakeStreamlit:
     def __init__(self) -> None:
         self.config_called = False
@@ -47,6 +74,7 @@ class _FakeStreamlit:
         self.captions: list[str] = []
         self.warning_called = False
         self.dataframe_payload = None
+        self.sidebar = _FakeSidebar()
 
     def set_page_config(self, **kwargs):
         self.config_called = True
@@ -55,6 +83,15 @@ class _FakeStreamlit:
     def title(self, text: str):
         self.title_called = True
         self.title_text = text
+
+    def subheader(self, text: str):
+        self.subheader_text = text
+
+    def text_input(self, _label: str, placeholder: str = ""):
+        return ""
+
+    def selectbox(self, _label: str, options, index: int = 0):
+        return options[index]
 
     def caption(self, text: str):
         self.captions.append(text)
@@ -66,11 +103,29 @@ class _FakeStreamlit:
     def dataframe(self, data, **kwargs):
         self.dataframe_payload = (data, kwargs)
 
+    def columns(self, spec):
+        return [_FakeMetricColumn(), _FakeMetricColumn(), _FakeMetricColumn()]
+
     def cache_data(self, **_kwargs):
         def decorator(func):
             return func
 
         return decorator
+
+
+class _FakeSidebar:
+    def __init__(self) -> None:
+        self.selectbox_value = "Accounts"
+
+    def selectbox(self, _label: str, options):
+        return self.selectbox_value
+
+
+class _FakeMetricColumn:
+    def metric(self, label: str, value: str, delta: str | None = None):
+        self.label = label
+        self.value = value
+        self.delta = delta
 
 
 def test_main_displays_accounts(monkeypatch):
@@ -86,8 +141,18 @@ def test_main_displays_accounts(monkeypatch):
         )
     ]
 
+    fake_st.sidebar.selectbox_value = "Accounts"
     monkeypatch.setattr(app, "st", fake_st)
     monkeypatch.setattr(app, "_load_accounts", lambda: accounts)
+    monkeypatch.setattr(
+        app,
+        "_load_net_worth_summary",
+        lambda start_date, end_date: SimpleNamespace(
+            asset_total=1,
+            liability_total=2,
+            net_worth=3,
+        ),
+    )
 
     app.main()
 
@@ -95,7 +160,7 @@ def test_main_displays_accounts(monkeypatch):
     assert fake_st.title_called
     assert fake_st.warning_called is False
     table_data, kwargs = fake_st.dataframe_payload
-    assert table_data[0]["GUID"] == "1"
+    assert table_data[0]["Name"] == "Checking"
     assert kwargs["use_container_width"] is True
     assert kwargs["hide_index"] is True
 
@@ -103,8 +168,18 @@ def test_main_displays_accounts(monkeypatch):
 def test_main_warns_when_no_accounts(monkeypatch):
     """main should warn the user when analytics has no data."""
     fake_st = _FakeStreamlit()
+    fake_st.sidebar.selectbox_value = "Accounts"
     monkeypatch.setattr(app, "st", fake_st)
     monkeypatch.setattr(app, "_load_accounts", lambda: [])
+    monkeypatch.setattr(
+        app,
+        "_load_net_worth_summary",
+        lambda start_date, end_date: SimpleNamespace(
+            asset_total=1,
+            liability_total=2,
+            net_worth=3,
+        ),
+    )
 
     app.main()
 

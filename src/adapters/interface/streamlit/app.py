@@ -1,6 +1,7 @@
 """Streamlit dashboard entry point."""
 
 from collections.abc import Sequence
+from datetime import date, timedelta
 from decimal import Decimal
 
 import streamlit as st
@@ -29,22 +30,73 @@ def _load_accounts() -> Sequence[AccountDTO]:
     return _fetch_accounts()
 
 
-def _fetch_net_worth_summary() -> NetWorthSummary:
+def _fetch_net_worth_summary(
+    start_date: date | None,
+    end_date: date | None,
+) -> NetWorthSummary:
     """Fetch the net worth summary from the GnuCash database."""
     adapter = SqlAlchemyDatabaseEngineAdapter()
     use_case = GetNetWorthSummaryUseCase(db_port=adapter)
-    return use_case.execute()
+    return use_case.execute(start_date=start_date, end_date=end_date)
 
 
 @st.cache_data(show_spinner=False)
-def _load_net_worth_summary() -> NetWorthSummary:
+def _load_net_worth_summary(
+    start_date: date | None,
+    end_date: date | None,
+) -> NetWorthSummary:
     """Cached wrapper around _fetch_net_worth_summary."""
-    return _fetch_net_worth_summary()
+    return _fetch_net_worth_summary(start_date, end_date)
 
 
 def _format_currency(value: Decimal) -> str:
     """Format currency values for display."""
     return f"{value:,.2f}"
+
+
+def _format_delta(value: Decimal) -> str:
+    """Format delta values for display."""
+    sign = "+" if value >= 0 else ""
+    return f"{sign}{value:,.2f}"
+
+
+def _format_delta_with_percent(
+    delta: Decimal,
+    baseline: Decimal,
+) -> str:
+    """Format delta value with percentage change."""
+    if baseline == 0:
+        return _format_delta(delta)
+    percent = (delta / baseline) * Decimal("100")
+    sign = "+" if percent >= 0 else ""
+    return f"{_format_delta(delta)} ({sign}{percent:.2f}%)"
+
+
+def _get_period_start(
+    period: str,
+    today: date,
+) -> date | None:
+    """Return the start date for the selected period."""
+    if period == "All Time":
+        return None
+    if period == "YTD":
+        return date(today.year, 1, 1)
+    if period == "MTD":
+        return date(today.year, today.month, 1)
+    if period == "QTD":
+        quarter = (today.month - 1) // 3
+        start_month = quarter * 3 + 1
+        return date(today.year, start_month, 1)
+    return None
+
+
+def _zero_summary() -> NetWorthSummary:
+    """Return a zeroed net worth summary."""
+    return NetWorthSummary(
+        asset_total=Decimal("0"),
+        liability_total=Decimal("0"),
+        net_worth=Decimal("0"),
+    )
 
 
 def _render_accounts(accounts: Sequence[AccountDTO]) -> None:
@@ -87,21 +139,65 @@ def main() -> None:
     st.set_page_config(page_title="GnuCash Dashboard", layout="wide")
     st.title("GnuCash Dashboard")
 
-    summary = _load_net_worth_summary()
-    assets_col, liabilities_col, net_worth_col = st.columns(3)
-    assets_col.metric("Assets", _format_currency(summary.asset_total))
-    liabilities_col.metric(
-        "Liabilities",
-        _format_currency(summary.liability_total),
-    )
-    net_worth_col.metric("Net Worth", _format_currency(summary.net_worth))
+    page = st.sidebar.selectbox("Page", ["Dashboard", "Accounts"])
 
-    accounts = _load_accounts()
-    st.caption(f"{len(accounts)} accounts synced from analytics.accounts_dim")
-    if not accounts:
-        st.warning("No accounts found. Run the sync first.")
-        return
-    _render_accounts(accounts)
+    if page == "Dashboard":
+        period = st.sidebar.selectbox(
+            "Period",
+            ["YTD", "MTD", "QTD", "All Time"],
+        )
+        today = date.today()
+        start_date = _get_period_start(period, today)
+        baseline_end = start_date - timedelta(days=1) if start_date else None
+
+        summary = _load_net_worth_summary(None, today)
+        baseline_summary = (
+            _load_net_worth_summary(None, baseline_end)
+            if baseline_end
+            else _zero_summary()
+        )
+
+        asset_delta = summary.asset_total - baseline_summary.asset_total
+        liability_delta = summary.liability_total - baseline_summary.liability_total
+        net_worth_delta = summary.net_worth - baseline_summary.net_worth
+
+        asset_delta_display = _format_delta_with_percent(
+            asset_delta,
+            baseline_summary.asset_total,
+        )
+        liability_delta_display = _format_delta_with_percent(
+            liability_delta,
+            baseline_summary.liability_total,
+        )
+        net_worth_delta_display = _format_delta_with_percent(
+            net_worth_delta,
+            baseline_summary.net_worth,
+        )
+
+        assets_col, liabilities_col, net_worth_col = st.columns(3)
+        assets_col.metric(
+            "Assets",
+            _format_currency(summary.asset_total),
+            asset_delta_display,
+        )
+        liabilities_col.metric(
+            "Liabilities",
+            _format_currency(summary.liability_total),
+            liability_delta_display,
+            delta_color="inverse",
+        )
+        net_worth_col.metric(
+            "Net Worth",
+            _format_currency(summary.net_worth),
+            net_worth_delta_display,
+        )
+    else:
+        accounts = _load_accounts()
+        st.caption(f"{len(accounts)} accounts synced from analytics.accounts_dim")
+        if not accounts:
+            st.warning("No accounts found. Run the sync first.")
+            return
+        _render_accounts(accounts)
 
 
 if __name__ == "__main__":  # pragma: no cover
