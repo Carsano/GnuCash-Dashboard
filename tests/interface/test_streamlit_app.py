@@ -167,7 +167,7 @@ def test_main_displays_accounts(monkeypatch):
     assert fake_st.warning_called is False
     table_data, kwargs = fake_st.dataframe_payload
     assert table_data[0]["Name"] == "Checking"
-    assert kwargs["use_container_width"] is True
+    assert kwargs["width"] == "stretch"
     assert kwargs["hide_index"] is True
 
 

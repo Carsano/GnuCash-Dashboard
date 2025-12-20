@@ -1,12 +1,12 @@
-"""Tests for the GetNetWorthSummaryUseCase."""
+"""Tests for the GetAssetCategoryBreakdownUseCase."""
 
 from datetime import date
 from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
-from src.application.use_cases.get_net_worth_summary import (
-    GetNetWorthSummaryUseCase,
+from src.application.use_cases.get_asset_category_breakdown import (
+    GetAssetCategoryBreakdownUseCase,
 )
 
 
@@ -34,36 +34,40 @@ def _build_db_port(results: list[list[SimpleNamespace]]) -> MagicMock:
     return db_port
 
 
-def test_execute_returns_summary_totals() -> None:
-    """Use case should aggregate assets, liabilities, and net worth."""
+def test_execute_returns_category_amounts_in_eur() -> None:
+    """Use case should aggregate asset categories and convert to EUR."""
     currency_row = [SimpleNamespace(guid="eur-guid")]
     balances = [
         SimpleNamespace(
-            account_type="ASSET",
+            account_type="BANK",
             commodity_guid="usd-guid",
             mnemonic="USD",
             namespace="CURRENCY",
+            actif_category="Actifs actuels",
             balance=Decimal("100.00"),
+        ),
+        SimpleNamespace(
+            account_type="CASH",
+            commodity_guid="eur-guid",
+            mnemonic="EUR",
+            namespace="CURRENCY",
+            actif_category="Actifs actuels",
+            balance=Decimal("20.00"),
         ),
         SimpleNamespace(
             account_type="LIABILITY",
             commodity_guid="eur-guid",
             mnemonic="EUR",
             namespace="CURRENCY",
-            balance=Decimal("-40.25"),
-        ),
-        SimpleNamespace(
-            account_type="INCOME",
-            commodity_guid="eur-guid",
-            mnemonic="EUR",
-            namespace="CURRENCY",
-            balance=Decimal("999.00"),
+            actif_category=None,
+            balance=Decimal("-5.00"),
         ),
         SimpleNamespace(
             account_type="STOCK",
             commodity_guid="stock-guid",
             mnemonic="ACME",
             namespace="NASDAQ",
+            actif_category="Investissements",
             balance=Decimal("2.0"),
         ),
     ]
@@ -83,42 +87,13 @@ def test_execute_returns_summary_totals() -> None:
     ]
     db_port = _build_db_port([currency_row, balances, prices])
 
-    use_case = GetNetWorthSummaryUseCase(db_port=db_port)
+    use_case = GetAssetCategoryBreakdownUseCase(db_port=db_port)
 
-    result = use_case.execute()
+    result = use_case.execute(end_date=date(2024, 1, 10))
 
-    assert result.asset_total == Decimal("190.00")
-    assert result.liability_total == Decimal("40.25")
-    assert result.net_worth == Decimal("149.75")
-    assert result.currency_code == "EUR"
-
-
-def test_execute_applies_date_filters() -> None:
-    """Use case should pass date filters to the query."""
-    currency_row = [SimpleNamespace(guid="eur-guid")]
-    balances = [
-        SimpleNamespace(
-            account_type="ASSET",
-            commodity_guid="eur-guid",
-            mnemonic="EUR",
-            namespace="CURRENCY",
-            balance=Decimal("10.00"),
-        ),
-    ]
-    prices = []
-    db_port = _build_db_port([currency_row, balances, prices])
-    engine = db_port.get_gnucash_engine.return_value
-
-    use_case = GetNetWorthSummaryUseCase(db_port=db_port)
-
-    use_case.execute(start_date=date(2024, 1, 1), end_date=date(2024, 3, 31))
-
-    calls = engine.connect.return_value.__enter__.return_value.execute.call_args_list
-    expected_params = {
-        "start_date": date(2024, 1, 1),
-        "end_date": date(2024, 3, 31),
+    categories = {item.category: item.amount for item in result.categories}
+    assert categories == {
+        "Actifs actuels": Decimal("110.00"),
+        "Investissements": Decimal("100.00"),
     }
-    assert any(
-        len(call.args) > 1 and call.args[1] == expected_params
-        for call in calls
-    )
+    assert result.currency_code == "EUR"

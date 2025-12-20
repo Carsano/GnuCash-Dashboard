@@ -1,4 +1,4 @@
-"""Use case to compute net worth from the GnuCash database."""
+"""Use case to compute asset category breakdown in a target currency."""
 
 from dataclasses import dataclass
 from datetime import date
@@ -8,49 +8,35 @@ from typing import Iterable
 from sqlalchemy import text
 
 from src.application.ports.database import DatabaseEnginePort
+from src.application.use_cases.get_net_worth_summary import DEFAULT_ASSET_TYPES
 from src.infrastructure.logging.logger import get_app_logger
 
 
-DEFAULT_ASSET_TYPES = (
-    "ASSET",
-    "BANK",
-    "CASH",
-    "STOCK",
-    "MUTUAL",
-    "RECEIVABLE",
-)
-DEFAULT_LIABILITY_TYPES = (
-    "LIABILITY",
-    "CREDIT",
-    "PAYABLE",
-)
+@dataclass(frozen=True)
+class AssetCategoryAmount:
+    """Amount aggregated for a given asset category."""
+
+    category: str
+    amount: Decimal
 
 
 @dataclass(frozen=True)
-class NetWorthSummary:
-    """Summary of net worth figures.
+class AssetCategoryBreakdown:
+    """Breakdown of asset amounts by category."""
 
-    Attributes:
-        asset_total: Sum of asset balances.
-        liability_total: Sum of liability balances.
-        net_worth: Assets minus liabilities.
-    """
-
-    asset_total: Decimal
-    liability_total: Decimal
-    net_worth: Decimal
     currency_code: str
+    categories: list[AssetCategoryAmount]
 
 
-class GetNetWorthSummaryUseCase:
-    """Compute net worth from the GnuCash database."""
+class GetAssetCategoryBreakdownUseCase:
+    """Compute asset category breakdown from the GnuCash database."""
 
     def __init__(
         self,
         db_port: DatabaseEnginePort,
         logger=None,
         asset_types: Iterable[str] | None = None,
-        liability_types: Iterable[str] | None = None,
+        actif_root_name: str = "Actif",
     ) -> None:
         """Initialize the use case.
 
@@ -58,34 +44,33 @@ class GetNetWorthSummaryUseCase:
             db_port: Port providing access to the GnuCash engine.
             logger: Optional logger compatible with logging.Logger-like API.
             asset_types: Optional iterable of account types treated as assets.
-            liability_types: Optional iterable treated as liabilities.
+            actif_root_name: Name of the root account containing asset buckets.
         """
         self._db_port = db_port
         self._logger = logger or get_app_logger()
         self._asset_types = tuple(asset_types or DEFAULT_ASSET_TYPES)
-        self._liability_types = tuple(
-            liability_types or DEFAULT_LIABILITY_TYPES
-        )
+        self._actif_root_name = actif_root_name
 
     def execute(
         self,
         start_date: date | None = None,
         end_date: date | None = None,
         target_currency: str = "EUR",
-    ) -> NetWorthSummary:
-        """Return the net worth summary.
+    ) -> AssetCategoryBreakdown:
+        """Return the asset breakdown in the target currency.
 
         Args:
             start_date: Optional lower bound for transaction post dates.
             end_date: Optional upper bound for transaction post dates.
+            target_currency: Currency code to convert into.
 
         Returns:
-            NetWorthSummary: Computed asset, liability, and net worth totals.
+            AssetCategoryBreakdown: Aggregated asset totals by category.
         """
         engine = self._db_port.get_gnucash_engine()
         with engine.connect() as conn:
             currency_guid = self._fetch_currency_guid(conn, target_currency)
-            balances = conn.execute(
+            rows = conn.execute(
                 self._build_query(start_date, end_date),
                 self._build_params(start_date, end_date),
             ).all()
@@ -95,12 +80,10 @@ class GetNetWorthSummaryUseCase:
                 end_date,
             )
 
-        asset_total = Decimal("0")
-        liability_total = Decimal("0")
-
-        for row in balances:
+        totals: dict[str, Decimal] = {}
+        for row in rows:
             account_type = row.account_type
-            if account_type not in self._asset_types and account_type not in self._liability_types:
+            if account_type not in self._asset_types:
                 continue
             balance = self._coerce_decimal(row.balance)
             converted = self._convert_balance(
@@ -114,40 +97,19 @@ class GetNetWorthSummaryUseCase:
             )
             if converted is None:
                 continue
-            if account_type in self._asset_types:
-                asset_total += converted
-            else:
-                liability_total += abs(converted)
+            totals[row.actif_category] = (
+                totals.get(row.actif_category, Decimal("0")) + converted
+            )
 
-        net_worth = asset_total - liability_total
+        categories = [
+            AssetCategoryAmount(category=category, amount=amount)
+            for category, amount in sorted(totals.items())
+        ]
 
-        self._logger.info(
-            f"Net worth computed: assets={asset_total}, "
-            f"liabilities={liability_total}, currency={target_currency}"
-        )
-
-        return NetWorthSummary(
-            asset_total=asset_total,
-            liability_total=liability_total,
-            net_worth=net_worth,
+        return AssetCategoryBreakdown(
             currency_code=target_currency,
+            categories=categories,
         )
-
-    @staticmethod
-    def _coerce_decimal(value) -> Decimal:
-        """Normalize numeric values to Decimal.
-
-        Args:
-            value: Raw numeric value from SQL.
-
-        Returns:
-            Decimal: Normalized numeric value.
-        """
-        if value is None:
-            return Decimal("0")
-        if isinstance(value, Decimal):
-            return value
-        return Decimal(str(value))
 
     @staticmethod
     def _build_query(
@@ -155,10 +117,25 @@ class GetNetWorthSummaryUseCase:
         end_date: date | None,
     ):
         base_sql = """
+        WITH RECURSIVE account_tree AS (
+            SELECT child.guid AS guid,
+                   child.parent_guid AS parent_guid,
+                   child.name AS top_child_name
+            FROM accounts root
+            JOIN accounts child ON child.parent_guid = root.guid
+            WHERE root.name = :actif_root
+            UNION ALL
+            SELECT a.guid,
+                   a.parent_guid,
+                   at.top_child_name
+            FROM account_tree at
+            JOIN accounts a ON a.parent_guid = at.guid
+        )
         SELECT a.account_type AS account_type,
                a.commodity_guid AS commodity_guid,
                c.mnemonic AS mnemonic,
                c.namespace AS namespace,
+               at.top_child_name AS actif_category,
                SUM(
                    CASE
                        WHEN c.namespace = 'CURRENCY'
@@ -167,29 +144,42 @@ class GetNetWorthSummaryUseCase:
                    END
                ) AS balance
         FROM accounts a
+        JOIN account_tree at ON at.guid = a.guid
         JOIN commodities c ON c.guid = a.commodity_guid
         JOIN splits s ON s.account_guid = a.guid
         JOIN transactions t ON t.guid = s.tx_guid
-        WHERE 1=1
+        WHERE at.top_child_name IS NOT NULL
         """
         if start_date:
             base_sql += " AND t.post_date >= :start_date"
         if end_date:
             base_sql += " AND t.post_date <= :end_date"
-        base_sql += " GROUP BY a.account_type, a.commodity_guid, c.mnemonic, c.namespace"
+        base_sql += (
+            " GROUP BY a.account_type, a.commodity_guid, c.mnemonic, "
+            "c.namespace, at.top_child_name"
+        )
         return text(base_sql)
 
-    @staticmethod
     def _build_params(
+        self,
         start_date: date | None,
         end_date: date | None,
-    ) -> dict[str, date]:
-        params: dict[str, date] = {}
+    ) -> dict[str, date | str]:
+        params: dict[str, date | str] = {}
+        params["actif_root"] = self._actif_root_name
         if start_date:
             params["start_date"] = start_date
         if end_date:
             params["end_date"] = end_date
         return params
+
+    @staticmethod
+    def _coerce_decimal(value) -> Decimal:
+        if value is None:
+            return Decimal("0")
+        if isinstance(value, Decimal):
+            return value
+        return Decimal(str(value))
 
     def _fetch_currency_guid(self, conn, currency: str) -> str:
         query = text(
@@ -220,9 +210,7 @@ class GetNetWorthSummaryUseCase:
         )
         params = {"currency_guid": currency_guid}
         if end_date:
-            query = text(
-                query.text + " AND date <= :end_date"
-            )
+            query = text(query.text + " AND date <= :end_date")
             params["end_date"] = end_date
         query = text(query.text + " ORDER BY commodity_guid, date DESC")
         rows = conn.execute(query, params).all()
@@ -267,5 +255,8 @@ class GetNetWorthSummaryUseCase:
             return None
         return balance * rate
 
-
-__all__ = ["GetNetWorthSummaryUseCase", "NetWorthSummary"]
+__all__ = [
+    "GetAssetCategoryBreakdownUseCase",
+    "AssetCategoryBreakdown",
+    "AssetCategoryAmount",
+]

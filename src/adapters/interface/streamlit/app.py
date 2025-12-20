@@ -14,6 +14,10 @@ from src.application.use_cases.get_net_worth_summary import (
     GetNetWorthSummaryUseCase,
     NetWorthSummary,
 )
+from src.application.use_cases.get_asset_category_breakdown import (
+    AssetCategoryBreakdown,
+    GetAssetCategoryBreakdownUseCase,
+)
 from src.infrastructure.db import SqlAlchemyDatabaseEngineAdapter
 
 
@@ -49,6 +53,25 @@ def _load_net_worth_summary(
     """Cached wrapper around _fetch_net_worth_summary."""
     _ = schema_version
     return _fetch_net_worth_summary(start_date, end_date)
+
+
+def _fetch_asset_category_breakdown(
+    end_date: date | None,
+) -> AssetCategoryBreakdown:
+    """Fetch asset category breakdown in EUR."""
+    adapter = SqlAlchemyDatabaseEngineAdapter()
+    use_case = GetAssetCategoryBreakdownUseCase(db_port=adapter)
+    return use_case.execute(end_date=end_date, target_currency="EUR")
+
+
+@st.cache_data(show_spinner=False)
+def _load_asset_category_breakdown(
+    end_date: date | None,
+    schema_version: int = 1,
+) -> AssetCategoryBreakdown:
+    """Cached wrapper around _fetch_asset_category_breakdown."""
+    _ = schema_version
+    return _fetch_asset_category_breakdown(end_date)
 
 
 def _format_currency(value: Decimal, currency_code: str) -> str:
@@ -135,7 +158,38 @@ def _render_accounts(accounts: Sequence[AccountDTO]) -> None:
         }
         for acc in filtered
     ]
-    st.dataframe(data, use_container_width=True, hide_index=True, height=420)
+    st.dataframe(data, width="stretch", hide_index=True, height=420)
+
+
+def _render_asset_category_chart(
+    breakdown: AssetCategoryBreakdown,
+) -> None:
+    """Render a pie chart of asset amounts by category."""
+    if not breakdown.categories:
+        st.info("No asset amounts available for the chart.")
+        return
+
+    data = [
+        {
+            "category": item.category,
+            "amount": float(item.amount),
+            "amount_label": _format_currency(item.amount, breakdown.currency_code),
+        }
+        for item in breakdown.categories
+    ]
+    spec = {
+        "mark": {"type": "arc", "innerRadius": 0},
+        "encoding": {
+            "theta": {"field": "amount", "type": "quantitative"},
+            "color": {"field": "category", "type": "nominal"},
+            "tooltip": [
+                {"field": "category", "type": "nominal"},
+                {"field": "amount_label", "type": "nominal"},
+            ],
+        },
+    }
+    st.subheader("Assets by Category (€)")
+    st.vega_lite_chart(data, spec, width="stretch")
 
 
 def main() -> None:
@@ -196,6 +250,8 @@ def main() -> None:
             _format_currency(summary.net_worth, currency_code),
             net_worth_delta_display,
         )
+        breakdown = _load_asset_category_breakdown(today, schema_version=1)
+        _render_asset_category_chart(breakdown)
     else:
         accounts = _load_accounts()
         st.caption(f"{len(accounts)} accounts synced from analytics.accounts_dim")

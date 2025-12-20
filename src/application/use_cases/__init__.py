@@ -6,6 +6,11 @@ from .get_net_worth_summary import (
     GetNetWorthSummaryUseCase,
     NetWorthSummary,
 )
+from .get_asset_category_breakdown import (
+    GetAssetCategoryBreakdownUseCase,
+    AssetCategoryBreakdown,
+    AssetCategoryAmount,
+)
 
 __all__ = [
     "SyncAccountsUseCase",
@@ -14,4 +19,7 @@ __all__ = [
     "AccountDTO",
     "GetNetWorthSummaryUseCase",
     "NetWorthSummary",
+    "GetAssetCategoryBreakdownUseCase",
+    "AssetCategoryBreakdown",
+    "AssetCategoryAmount",
 ]
