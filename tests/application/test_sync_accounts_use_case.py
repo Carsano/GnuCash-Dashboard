@@ -111,3 +111,64 @@ def test_run_handles_empty_source_without_insert() -> None:
     refresh_conn.execute.assert_not_called()
     assert result.source_count == 0
     assert result.inserted_count == 0
+
+
+def test_run_filters_hex_named_accounts() -> None:
+    """Accounts with hex-only names should be filtered out."""
+    db_port, refresh_conn = _build_db_port(
+        rows=[
+            FakeRow(
+                {
+                    "guid": "b",
+                    "name": "552dbab9691b4dadb80cc170009f9cce",
+                    "account_type": "BANK",
+                    "commodity_guid": "USD",
+                    "parent_guid": "ROOT",
+                }
+            ),
+            FakeRow(
+                {
+                    "guid": "c",
+                    "name": "Real Account",
+                    "account_type": "CASH",
+                    "commodity_guid": "USD",
+                    "parent_guid": "ROOT",
+                }
+            ),
+            FakeRow(
+                {
+                    "guid": "a",
+                    "name": "Checking",
+                    "account_type": "BANK",
+                    "commodity_guid": "USD",
+                    "parent_guid": "ROOT",
+                }
+            ),
+        ]
+    )
+
+    use_case = SyncAccountsUseCase(db_port=db_port)
+
+    result = use_case.run()
+
+    refresh_conn.execute.assert_called_once_with(
+        sync_accounts_module.INSERT_ACCOUNTS_SQL,
+        [
+            {
+                "account_type": "BANK",
+                "commodity_guid": "USD",
+                "guid": "a",
+                "name": "Checking",
+                "parent_guid": "ROOT",
+            },
+            {
+                "account_type": "CASH",
+                "commodity_guid": "USD",
+                "guid": "c",
+                "name": "Real Account",
+                "parent_guid": "ROOT",
+            },
+        ],
+    )
+    assert result.source_count == 3
+    assert result.inserted_count == 2

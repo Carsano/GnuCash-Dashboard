@@ -55,6 +55,8 @@ CREATE TABLE IF NOT EXISTS accounts_dim (
 )
 """
 
+_HEX_CHARS = set("0123456789abcdef")
+
 
 @dataclass(frozen=True)
 class SyncAccountsResult:
@@ -98,7 +100,8 @@ class SyncAccountsUseCase:
         gnucash_engine = self._db_port.get_gnucash_engine()
         analytics_engine = self._db_port.get_analytics_engine()
 
-        accounts = self._fetch_source_accounts(gnucash_engine)
+        source_accounts = self._fetch_source_accounts(gnucash_engine)
+        accounts = self._filter_accounts(source_accounts)
         self._prepare_analytics_destination(analytics_engine)
         inserted_count = self._refresh_analytics_accounts(
             analytics_engine,
@@ -106,7 +109,7 @@ class SyncAccountsUseCase:
         )
 
         return SyncAccountsResult(
-            source_count=len(accounts),
+            source_count=len(source_accounts),
             inserted_count=inserted_count,
         )
 
@@ -126,11 +129,36 @@ class SyncAccountsUseCase:
             rows = conn.execute(SELECT_ACCOUNTS_SQL).all()
 
         accounts = [dict(row._mapping) for row in rows]
-        accounts = sorted(accounts, key=lambda row: row.get("guid", ""))
         self._logger.info(
             f"Fetched {len(accounts)} accounts from GnuCash source"
         )
         return accounts
+
+    def _filter_accounts(
+        self,
+        accounts: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Filter out accounts with invalid names.
+
+        Args:
+            accounts: Raw records extracted from the GnuCash source.
+
+        Returns:
+            list[dict[str, Any]]: Records with validated, sorted names.
+        """
+        filtered = []
+        for account in accounts:
+            name_value = account.get("name")
+            name = name_value if isinstance(name_value, str) else ""
+            if self._is_valid_account_name(name):
+                filtered.append(account)
+        filtered = sorted(filtered, key=lambda row: row.get("guid", ""))
+        filtered_count = len(accounts) - len(filtered)
+        if filtered_count:
+            self._logger.warning(
+                f"Filtered out {filtered_count} accounts with invalid names"
+            )
+        return filtered
 
     def _prepare_analytics_destination(self, analytics_engine: Engine) -> None:
         """Ensure the analytics destination can receive data.
@@ -172,6 +200,25 @@ class SyncAccountsUseCase:
         """
         with analytics_engine.begin() as conn:
             conn.exec_driver_sql(CREATE_ACCOUNTS_DIM_SQL)
+
+    @staticmethod
+    def _is_valid_account_name(name: str) -> bool:
+        """Return True when the account name is not an opaque hex id.
+
+        Args:
+            name: Account name to evaluate.
+
+        Returns:
+            bool: True when the name should be retained.
+        """
+        candidate = name.strip()
+        if not candidate:
+            return False
+        if len(candidate) == 32:
+            lowered = candidate.lower()
+            if all(char in _HEX_CHARS for char in lowered):
+                return False
+        return True
 
 
 __all__ = ["SyncAccountsUseCase", "SyncAccountsResult"]
