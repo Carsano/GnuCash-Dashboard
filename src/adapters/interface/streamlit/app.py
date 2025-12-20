@@ -527,6 +527,7 @@ def main() -> None:
             schema_version=2,
         )
         category_selection = alt.selection_point(
+            name="category_selection",
             fields=["parent_label"],
             on="click",
             clear="dblclick",
@@ -552,7 +553,7 @@ def main() -> None:
             breakdown=breakdown_level_2,
             title="Assets by Subcategory (€)",
             max_categories=10,
-            chart_size=360,
+            chart_size=700,
             row_height=38,
             min_height=220,
             height=500,
@@ -573,7 +574,7 @@ def main() -> None:
         ).configure_legend(
             labelColor="#e7ecf3"
         )
-        st.altair_chart(combined, use_container_width=True)
+        st.altair_chart(combined, width="stretch")
     else:
         accounts = _load_accounts()
         st.caption(f"{len(accounts)} accounts synced "
