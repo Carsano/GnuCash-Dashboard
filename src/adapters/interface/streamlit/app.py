@@ -181,21 +181,51 @@ def _render_asset_category_chart(
         {
             "category": item.category,
             "amount": float(item.amount),
-            "amount_label": _format_currency(item.amount,
-                                             breakdown.currency_code),
+            "amount_label": _format_currency(
+                item.amount,
+                breakdown.currency_code,
+            ),
         }
         for item in breakdown.categories
     ]
+    data = sorted(data, key=lambda row: row["amount"])
+    total_amount = sum(item.amount for item in breakdown.categories)
+    total_label = _format_currency(total_amount, breakdown.currency_code)
     spec = {
-        "mark": {"type": "arc", "innerRadius": 0},
-        "encoding": {
-            "theta": {"field": "amount", "type": "quantitative"},
-            "color": {"field": "category", "type": "nominal"},
-            "tooltip": [
-                {"field": "category", "type": "nominal"},
-                {"field": "amount_label", "type": "nominal"},
-            ],
-        },
+        "layer": [
+            {
+                "mark": {
+                    "type": "arc",
+                    "innerRadius": 105,
+                    "cornerRadius": 50,
+                    "padAngle": 0.01,
+                },
+                "encoding": {
+                    "theta": {"field": "amount", "type": "quantitative"},
+                    "color": {"field": "category", "type": "nominal"},
+                    "order": {"field": "amount", "type": "quantitative",
+                              "sort": "descending"},
+                    "tooltip": [
+                        {"field": "category", "type": "nominal"},
+                        {"field": "amount_label", "type": "nominal"},
+                    ],
+                },
+            },
+            {
+                "data": {"values": [{"total_label": total_label}]},
+                "mark": {
+                    "type": "text",
+                    "align": "center",
+                    "baseline": "middle",
+                    "fontSize": 26,
+                    "fontWeight": "bold",
+                    "color": "#ffffff",
+                },
+                "encoding": {"text": {"field": "total_label"}},
+            },
+        ],
+        "width": 260,
+        "height": 260,
     }
     st.subheader(title)
     st.vega_lite_chart(data, spec, width="stretch")
