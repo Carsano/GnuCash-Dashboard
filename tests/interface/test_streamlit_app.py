@@ -42,7 +42,12 @@ def test_load_accounts_uses_fetch(monkeypatch):
 
 def test_fetch_net_worth_summary_invokes_use_case(monkeypatch):
     """_fetch_net_worth_summary should instantiate the adapter and use case."""
-    fake_summary = SimpleNamespace(asset_total=1, liability_total=2, net_worth=3)
+    fake_summary = SimpleNamespace(
+        asset_total=1,
+        liability_total=2,
+        net_worth=3,
+        currency_code="EUR",
+    )
 
     class _FakeUseCase:
         def __init__(self, db_port):
@@ -151,6 +156,7 @@ def test_main_displays_accounts(monkeypatch):
             asset_total=1,
             liability_total=2,
             net_worth=3,
+            currency_code="EUR",
         ),
     )
 
@@ -178,6 +184,7 @@ def test_main_warns_when_no_accounts(monkeypatch):
             asset_total=1,
             liability_total=2,
             net_worth=3,
+            currency_code="EUR",
         ),
     )
 

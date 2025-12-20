@@ -44,14 +44,17 @@ def _fetch_net_worth_summary(
 def _load_net_worth_summary(
     start_date: date | None,
     end_date: date | None,
+    schema_version: int = 1,
 ) -> NetWorthSummary:
     """Cached wrapper around _fetch_net_worth_summary."""
+    _ = schema_version
     return _fetch_net_worth_summary(start_date, end_date)
 
 
-def _format_currency(value: Decimal) -> str:
+def _format_currency(value: Decimal, currency_code: str) -> str:
     """Format currency values for display."""
-    return f"{value:,.2f}"
+    symbol = "€" if currency_code == "EUR" else currency_code
+    return f"{value:,.2f} {symbol}"
 
 
 def _format_delta(value: Decimal) -> str:
@@ -90,12 +93,13 @@ def _get_period_start(
     return None
 
 
-def _zero_summary() -> NetWorthSummary:
+def _zero_summary(currency_code: str) -> NetWorthSummary:
     """Return a zeroed net worth summary."""
     return NetWorthSummary(
         asset_total=Decimal("0"),
         liability_total=Decimal("0"),
         net_worth=Decimal("0"),
+        currency_code=currency_code,
     )
 
 
@@ -150,11 +154,12 @@ def main() -> None:
         start_date = _get_period_start(period, today)
         baseline_end = start_date - timedelta(days=1) if start_date else None
 
-        summary = _load_net_worth_summary(None, today)
+        summary = _load_net_worth_summary(None, today, schema_version=2)
+        currency_code = getattr(summary, "currency_code", "EUR")
         baseline_summary = (
-            _load_net_worth_summary(None, baseline_end)
+            _load_net_worth_summary(None, baseline_end, schema_version=2)
             if baseline_end
-            else _zero_summary()
+            else _zero_summary(currency_code)
         )
 
         asset_delta = summary.asset_total - baseline_summary.asset_total
@@ -177,18 +182,18 @@ def main() -> None:
         assets_col, liabilities_col, net_worth_col = st.columns(3)
         assets_col.metric(
             "Assets",
-            _format_currency(summary.asset_total),
+            _format_currency(summary.asset_total, currency_code),
             asset_delta_display,
         )
         liabilities_col.metric(
             "Liabilities",
-            _format_currency(summary.liability_total),
+            _format_currency(summary.liability_total, currency_code),
             liability_delta_display,
             delta_color="inverse",
         )
         net_worth_col.metric(
             "Net Worth",
-            _format_currency(summary.net_worth),
+            _format_currency(summary.net_worth, currency_code),
             net_worth_delta_display,
         )
     else:

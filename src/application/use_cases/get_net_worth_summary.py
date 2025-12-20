@@ -39,6 +39,7 @@ class NetWorthSummary:
     asset_total: Decimal
     liability_total: Decimal
     net_worth: Decimal
+    currency_code: str
 
 
 class GetNetWorthSummaryUseCase:
@@ -70,6 +71,7 @@ class GetNetWorthSummaryUseCase:
         self,
         start_date: date | None = None,
         end_date: date | None = None,
+        target_currency: str = "EUR",
     ) -> NetWorthSummary:
         """Return the net worth summary.
 
@@ -80,41 +82,54 @@ class GetNetWorthSummaryUseCase:
         Returns:
             NetWorthSummary: Computed asset, liability, and net worth totals.
         """
-        query = self._build_query(start_date, end_date)
-
         engine = self._db_port.get_gnucash_engine()
         with engine.connect() as conn:
-            rows = conn.execute(query, self._build_params(start_date, end_date)).all()
+            currency_guid = self._fetch_currency_guid(conn, target_currency)
+            balances = conn.execute(
+                self._build_query(start_date, end_date),
+                self._build_params(start_date, end_date),
+            ).all()
+            prices = self._fetch_latest_prices(
+                conn,
+                currency_guid,
+                end_date,
+            )
 
-        totals = {
-            row.account_type: self._coerce_decimal(row.balance) for row in rows
-        }
+        asset_total = Decimal("0")
+        liability_total = Decimal("0")
 
-        asset_total = sum(
-            (
-                totals.get(account_type, Decimal("0"))
-                for account_type in self._asset_types
-            ),
-            Decimal("0"),
-        )
-        liability_total = sum(
-            (
-                abs(totals.get(account_type, Decimal("0")))
-                for account_type in self._liability_types
-            ),
-            Decimal("0"),
-        )
+        for row in balances:
+            account_type = row.account_type
+            if account_type not in self._asset_types and account_type not in self._liability_types:
+                continue
+            balance = self._coerce_decimal(row.balance)
+            converted = self._convert_balance(
+                balance,
+                row.commodity_guid,
+                row.mnemonic,
+                currency_guid,
+                target_currency,
+                prices,
+            )
+            if converted is None:
+                continue
+            if account_type in self._asset_types:
+                asset_total += converted
+            else:
+                liability_total += abs(converted)
+
         net_worth = asset_total - liability_total
 
         self._logger.info(
             f"Net worth computed: assets={asset_total}, "
-            f"liabilities={liability_total}"
+            f"liabilities={liability_total}, currency={target_currency}"
         )
 
         return NetWorthSummary(
             asset_total=asset_total,
             liability_total=liability_total,
             net_worth=net_worth,
+            currency_code=target_currency,
         )
 
     @staticmethod
@@ -140,9 +155,12 @@ class GetNetWorthSummaryUseCase:
     ):
         base_sql = """
         SELECT a.account_type AS account_type,
+               a.commodity_guid AS commodity_guid,
+               c.mnemonic AS mnemonic,
                SUM(CAST(s.value_num AS NUMERIC) / NULLIF(s.value_denom, 0))
                AS balance
         FROM accounts a
+        JOIN commodities c ON c.guid = a.commodity_guid
         JOIN splits s ON s.account_guid = a.guid
         JOIN transactions t ON t.guid = s.tx_guid
         WHERE 1=1
@@ -151,7 +169,7 @@ class GetNetWorthSummaryUseCase:
             base_sql += " AND t.post_date >= :start_date"
         if end_date:
             base_sql += " AND t.post_date <= :end_date"
-        base_sql += " GROUP BY a.account_type"
+        base_sql += " GROUP BY a.account_type, a.commodity_guid, c.mnemonic"
         return text(base_sql)
 
     @staticmethod
@@ -165,6 +183,77 @@ class GetNetWorthSummaryUseCase:
         if end_date:
             params["end_date"] = end_date
         return params
+
+    def _fetch_currency_guid(self, conn, currency: str) -> str:
+        query = text(
+            """
+            SELECT guid
+            FROM commodities
+            WHERE mnemonic = :currency AND namespace = 'CURRENCY'
+            LIMIT 1
+            """
+        )
+        result = conn.execute(query, {"currency": currency}).first()
+        if not result:
+            raise RuntimeError(f"Missing currency in commodities: {currency}")
+        return result.guid
+
+    def _fetch_latest_prices(
+        self,
+        conn,
+        currency_guid: str,
+        end_date: date | None,
+    ) -> dict[str, Decimal]:
+        query = text(
+            """
+            SELECT commodity_guid, value_num, value_denom, date
+            FROM prices
+            WHERE currency_guid = :currency_guid
+            """
+        )
+        params = {"currency_guid": currency_guid}
+        if end_date:
+            query = text(
+                query.text + " AND date <= :end_date"
+            )
+            params["end_date"] = end_date
+        query = text(query.text + " ORDER BY commodity_guid, date DESC")
+        rows = conn.execute(query, params).all()
+
+        rates: dict[str, Decimal] = {}
+        for row in rows:
+            if row.commodity_guid in rates:
+                continue
+            denom = self._coerce_decimal(row.value_denom)
+            if denom == 0:
+                self._logger.warning(
+                    f"Skipping FX rate with zero denominator for {row.commodity_guid}"
+                )
+                continue
+            rates[row.commodity_guid] = self._coerce_decimal(row.value_num) / denom
+        return rates
+
+    def _convert_balance(
+        self,
+        balance: Decimal,
+        commodity_guid: str,
+        mnemonic: str,
+        target_guid: str,
+        target_currency: str,
+        prices: dict[str, Decimal],
+    ) -> Decimal | None:
+        if not commodity_guid or not mnemonic:
+            self._logger.warning("Skipping account with missing commodity info")
+            return None
+        if commodity_guid == target_guid or mnemonic == target_currency:
+            return balance
+        rate = prices.get(commodity_guid)
+        if rate is None:
+            self._logger.warning(
+                f"Missing FX rate for {mnemonic} to {target_currency}"
+            )
+            return None
+        return balance * rate
 
 
 __all__ = ["GetNetWorthSummaryUseCase", "NetWorthSummary"]
