@@ -18,6 +18,8 @@ class AssetCategoryAmount:
 
     category: str
     amount: Decimal
+    parent_category: str | None = None
+    parent_category: str | None = None
 
 
 @dataclass(frozen=True)
@@ -82,12 +84,17 @@ class GetAssetCategoryBreakdownUseCase:
                 end_date,
             )
 
-        totals: dict[str, Decimal] = {}
+        totals: dict[tuple[str | None, str], Decimal] = {}
         for row in rows:
             account_type = row.account_type
             if account_type not in self._asset_types:
                 continue
             category = self._resolve_category(row, level)
+            parent_category = (
+                row.actif_category
+                if level == 2
+                else None
+            )
             if not category:
                 continue
             balance = self._coerce_decimal(row.balance)
@@ -102,13 +109,16 @@ class GetAssetCategoryBreakdownUseCase:
             )
             if converted is None:
                 continue
-            totals[category] = (
-                totals.get(category, Decimal("0")) + converted
-            )
+            key = (parent_category, category)
+            totals[key] = totals.get(key, Decimal("0")) + converted
 
         categories = [
-            AssetCategoryAmount(category=category, amount=amount)
-            for category, amount in sorted(totals.items())
+            AssetCategoryAmount(
+                category=category,
+                amount=amount,
+                parent_category=parent_category,
+            )
+            for (parent_category, category), amount in sorted(totals.items())
         ]
 
         return AssetCategoryBreakdown(

@@ -178,6 +178,9 @@ def _render_asset_category_chart(
     min_height: int = 220,
     height: int | None = None,
     enable_selection: bool = False,
+    selection: object | None = None,
+    filter_selection: bool = False,
+    dim_by_selection: bool = False,
     show_legend: bool = False,
     legend_columns: int = 3,
     palette: Sequence[str] | None = None,
@@ -193,14 +196,74 @@ def _render_asset_category_chart(
         min_height: Minimum chart height in pixels.
         height: Optional explicit chart height override.
         enable_selection: Whether clicking highlights one category.
+        selection: Optional Altair selection to reuse across charts.
+        filter_selection: Whether to filter this chart by selection.
+        dim_by_selection: Whether to dim non-selected categories.
         show_legend: Whether to display the legend.
         legend_columns: Column count when legend is shown.
         palette: Optional color palette override.
     """
+    chart = _build_asset_category_chart(
+        breakdown=breakdown,
+        title=title,
+        max_categories=max_categories,
+        chart_size=chart_size,
+        row_height=row_height,
+        min_height=min_height,
+        height=height,
+        enable_selection=enable_selection,
+        selection=selection,
+        filter_selection=filter_selection,
+        dim_by_selection=dim_by_selection,
+        show_legend=show_legend,
+        legend_columns=legend_columns,
+        palette=palette,
+    )
+    st.altair_chart(chart, use_container_width=False)
+
+
+def _build_asset_category_chart(
+    breakdown: AssetCategoryBreakdown,
+    title: str,
+    max_categories: int,
+    chart_size: int,
+    row_height: int,
+    min_height: int,
+    height: int | None,
+    enable_selection: bool,
+    selection: object | None,
+    filter_selection: bool,
+    dim_by_selection: bool,
+    show_legend: bool,
+    legend_columns: int,
+    palette: Sequence[str] | None,
+) -> alt.Chart:
+    """Build a horizontal bar chart of asset amounts by category.
+
+    Args:
+        breakdown: Aggregated asset totals by category.
+        title: Chart title to display above the chart.
+        max_categories: Maximum categories before grouping into Other.
+        chart_size: Width for the chart canvas.
+        row_height: Height in pixels per category row.
+        min_height: Minimum chart height in pixels.
+        height: Optional explicit chart height override.
+        enable_selection: Whether clicking highlights one category.
+        selection: Optional Altair selection to reuse across charts.
+        filter_selection: Whether to filter this chart by selection.
+        dim_by_selection: Whether to dim non-selected categories.
+        show_legend: Whether to display the legend.
+        legend_columns: Column count when legend is shown.
+        palette: Optional color palette override.
+
+    Returns:
+        Altair chart object ready to render.
+    """
     if not breakdown.categories:
-        st.info("No asset amounts available for the chart.")
-        return
-    data, total_amount = _prepare_donut_chart_data(
+        return alt.Chart(alt.Data(values=[])).mark_text(
+            text="No asset amounts available for the chart."
+        )
+    data, total_amount = _prepare_bar_chart_data(
         breakdown,
         max_categories=max_categories,
     )
@@ -231,13 +294,6 @@ def _render_asset_category_chart(
         else None
     )
 
-    select_category = alt.selection_point(
-        fields=["category"],
-        on="click",
-        clear="dblclick",
-        empty="none",
-    )
-
     bar_height = height or max(min_height, len(data) * row_height)
     base = alt.Chart(alt.Data(values=data)).mark_bar(
         cornerRadiusEnd=4
@@ -253,7 +309,7 @@ def _render_asset_category_chart(
             ),
         ),
         y=alt.Y(
-            "category:N",
+            "label:N",
             sort=alt.SortField(field="amount", order="descending"),
             axis=alt.Axis(
                 title=None,
@@ -262,21 +318,22 @@ def _render_asset_category_chart(
             ),
         ),
         color=alt.Color(
-            "category:N",
+            "label:N",
             scale=alt.Scale(range=palette_scale),
             legend=legend,
         ),
+        detail=alt.Detail("parent_label:N"),
         opacity=(
             alt.condition(
-                select_category,
+                selection,
                 alt.value(1.0),
                 alt.value(0.25),
             )
-            if enable_selection
+            if (enable_selection or dim_by_selection) and selection is not None
             else alt.value(1.0)
         ),
         tooltip=[
-            alt.Tooltip("category:N"),
+            alt.Tooltip("label:N"),
             alt.Tooltip("amount_label:N"),
             alt.Tooltip("share_label:N"),
         ],
@@ -292,7 +349,7 @@ def _render_asset_category_chart(
     ).encode(
         x="amount:Q",
         y=alt.Y(
-            "category:N",
+            "label:N",
             sort=alt.SortField(field="amount", order="descending"),
         ),
         text=alt.Text("amount_label:N"),
@@ -308,31 +365,39 @@ def _render_asset_category_chart(
     ).encode(
         x="amount:Q",
         y=alt.Y(
-            "category:N",
+            "label:N",
             sort=alt.SortField(field="amount", order="descending"),
         ),
         text=alt.Text("share_label:N"),
     )
 
+    if filter_selection and selection is not None:
+        base = base.transform_filter(selection)
+        value_text = value_text.transform_filter(selection)
+        percent_text = percent_text.transform_filter(selection)
+
     chart = alt.layer(base, value_text, percent_text).properties(
         width=chart_size,
         height=bar_height,
-    ).configure_view(
-        stroke=None
-    ).configure_legend(
-        labelColor="#e7ecf3"
+        title=alt.TitleParams(
+            text=title,
+            anchor="start",
+            color="#f5f7ff",
+            fontSize=18,
+            fontWeight="bold",
+            offset=8,
+        ),
     )
-    if enable_selection:
-        chart = chart.add_params(select_category)
-    st.subheader(title)
-    st.altair_chart(chart, width='stretch')
+    if selection is not None and (enable_selection or filter_selection or dim_by_selection):
+        chart = chart.add_params(selection)
+    return chart
 
 
-def _prepare_donut_chart_data(
+def _prepare_bar_chart_data(
     breakdown: AssetCategoryBreakdown,
     max_categories: int = 6,
 ) -> tuple[list[dict[str, str | float]], Decimal]:
-    """Prepare donut chart data with a Top-N + Other grouping.
+    """Prepare bar chart data with a Top-N + Other grouping.
 
     Args:
         breakdown: Aggregated asset totals by category.
@@ -355,7 +420,11 @@ def _prepare_donut_chart_data(
     if other_items and other_amount != 0:
         top_items = [
             *top_items,
-            type(other_items[0])(category="Other", amount=other_amount),
+            type(other_items[0])(
+                category="Other",
+                amount=other_amount,
+                parent_category=None,
+            ),
         ]
     total_amount = sum(
         (item.amount for item in sorted_items),
@@ -370,7 +439,12 @@ def _prepare_donut_chart_data(
         )
         data.append(
             {
-                "category": item.category,
+                "label": item.category,
+                "parent_label": getattr(
+                    item,
+                    "parent_category",
+                    None,
+                ) or item.category,
                 "amount": float(item.amount),
                 "amount_label": _format_currency(
                     item.amount,
@@ -445,33 +519,61 @@ def main() -> None:
         breakdown_level_1 = _load_asset_category_breakdown(
             today,
             level=1,
-            schema_version=1,
+            schema_version=2,
         )
         breakdown_level_2 = _load_asset_category_breakdown(
             today,
             level=2,
-            schema_version=1,
+            schema_version=2,
         )
-        chart_left, chart_right = st.columns(2)
-        with chart_left:
-            _render_asset_category_chart(
-                breakdown_level_1,
-                "Assets by Category (€)",
-                max_categories=5,
-                chart_size=360,
-                height=500,
-                enable_selection=True,
-                legend_columns=2,
+        category_selection = alt.selection_point(
+            fields=["parent_label"],
+            on="click",
+            clear="dblclick",
+            empty="all",
+        )
+        left_chart = _build_asset_category_chart(
+            breakdown=breakdown_level_1,
+            title="Assets by Category (€)",
+            max_categories=5,
+            chart_size=360,
+            row_height=38,
+            min_height=220,
+            height=500,
+            enable_selection=True,
+            selection=category_selection,
+            filter_selection=False,
+            dim_by_selection=False,
+            show_legend=False,
+            legend_columns=2,
+            palette=None,
+        )
+        right_chart = _build_asset_category_chart(
+            breakdown=breakdown_level_2,
+            title="Assets by Subcategory (€)",
+            max_categories=10,
+            chart_size=360,
+            row_height=38,
+            min_height=220,
+            height=500,
+            enable_selection=False,
+            selection=category_selection,
+            filter_selection=False,
+            dim_by_selection=True,
+            show_legend=False,
+            legend_columns=3,
+            palette=None,
+        )
+        combined = alt.hconcat(left_chart, right_chart, spacing=32).properties(
+            title=alt.TitleParams(
+                text="",
             )
-        with chart_right:
-            _render_asset_category_chart(
-                breakdown_level_2,
-                "Assets by Subcategory (€)",
-                max_categories=10,
-                chart_size=360,
-                height=500,
-                legend_columns=3,
-            )
+        ).configure_view(
+            stroke=None
+        ).configure_legend(
+            labelColor="#e7ecf3"
+        )
+        st.altair_chart(combined, use_container_width=True)
     else:
         accounts = _load_accounts()
         st.caption(f"{len(accounts)} accounts synced "
