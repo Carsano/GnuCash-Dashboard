@@ -2,10 +2,16 @@
 
 from .sync_accounts import SyncAccountsUseCase, SyncAccountsResult
 from .get_accounts import GetAccountsUseCase, AccountDTO
+from .get_net_worth_summary import (
+    GetNetWorthSummaryUseCase,
+    NetWorthSummary,
+)
 
 __all__ = [
     "SyncAccountsUseCase",
     "SyncAccountsResult",
     "GetAccountsUseCase",
     "AccountDTO",
+    "GetNetWorthSummaryUseCase",
+    "NetWorthSummary",
 ]
