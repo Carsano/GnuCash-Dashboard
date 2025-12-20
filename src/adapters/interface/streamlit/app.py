@@ -194,13 +194,14 @@ def _render_accounts(accounts: Sequence[AccountDTO]) -> None:
         filtered.append(acc)
 
     st.caption(f"{len(filtered)} accounts shown")
+    name_by_guid = {acc.guid: acc.name for acc in accounts}
     data = [
         {
-            "GUID": acc.guid,
             "Name": acc.name,
             "Type": acc.account_type,
-            "Commodity": acc.commodity_guid,
-            "Parent": acc.parent_guid,
+            "Parent": name_by_guid.get(acc.parent_guid, "—")
+            if acc.parent_guid
+            else "—",
         }
         for acc in filtered
     ]
