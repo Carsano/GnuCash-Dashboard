@@ -33,6 +33,13 @@ def test_execute_returns_accounts_from_analytics_db() -> None:
             parent_guid=None,
         ),
         SimpleNamespace(
+            guid="hex",
+            name="b13e492052bf4acfaf4bd739b1351b5d",
+            account_type="BANK",
+            commodity_guid="USD",
+            parent_guid=None,
+        ),
+        SimpleNamespace(
             guid="b",
             name="Savings",
             account_type="BANK",

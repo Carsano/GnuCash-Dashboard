@@ -6,6 +6,7 @@ from typing import List
 from sqlalchemy import text
 
 from src.application.ports.database import DatabaseEnginePort
+from src.application.use_cases.account_filters import is_valid_account_name
 
 
 @dataclass(frozen=True)
@@ -49,6 +50,7 @@ class GetAccountsUseCase:
                 parent_guid=row.parent_guid,
             )
             for row in rows
+            if is_valid_account_name(row.name)
         ]
 
 

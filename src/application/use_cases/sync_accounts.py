@@ -14,6 +14,7 @@ from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
 from src.application.ports.database import DatabaseEnginePort
+from src.application.use_cases.account_filters import is_valid_account_name
 from src.infrastructure.logging.logger import get_app_logger
 
 
@@ -54,8 +55,6 @@ CREATE TABLE IF NOT EXISTS accounts_dim (
     parent_guid TEXT
 )
 """
-
-_HEX_CHARS = set("0123456789abcdef")
 
 
 @dataclass(frozen=True)
@@ -150,7 +149,7 @@ class SyncAccountsUseCase:
         for account in accounts:
             name_value = account.get("name")
             name = name_value if isinstance(name_value, str) else ""
-            if self._is_valid_account_name(name):
+            if is_valid_account_name(name):
                 filtered.append(account)
         filtered = sorted(filtered, key=lambda row: row.get("guid", ""))
         filtered_count = len(accounts) - len(filtered)
@@ -200,25 +199,5 @@ class SyncAccountsUseCase:
         """
         with analytics_engine.begin() as conn:
             conn.exec_driver_sql(CREATE_ACCOUNTS_DIM_SQL)
-
-    @staticmethod
-    def _is_valid_account_name(name: str) -> bool:
-        """Return True when the account name is not an opaque hex id.
-
-        Args:
-            name: Account name to evaluate.
-
-        Returns:
-            bool: True when the name should be retained.
-        """
-        candidate = name.strip()
-        if not candidate:
-            return False
-        if len(candidate) == 32:
-            lowered = candidate.lower()
-            if all(char in _HEX_CHARS for char in lowered):
-                return False
-        return True
-
 
 __all__ = ["SyncAccountsUseCase", "SyncAccountsResult"]
