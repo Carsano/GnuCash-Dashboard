@@ -44,6 +44,7 @@ def test_execute_returns_category_amounts_in_eur() -> None:
             mnemonic="USD",
             namespace="CURRENCY",
             actif_category="Actifs actuels",
+            actif_subcategory="Liquidites",
             balance=Decimal("100.00"),
         ),
         SimpleNamespace(
@@ -52,6 +53,7 @@ def test_execute_returns_category_amounts_in_eur() -> None:
             mnemonic="EUR",
             namespace="CURRENCY",
             actif_category="Actifs actuels",
+            actif_subcategory="Liquidites",
             balance=Decimal("20.00"),
         ),
         SimpleNamespace(
@@ -60,6 +62,7 @@ def test_execute_returns_category_amounts_in_eur() -> None:
             mnemonic="EUR",
             namespace="CURRENCY",
             actif_category=None,
+            actif_subcategory=None,
             balance=Decimal("-5.00"),
         ),
         SimpleNamespace(
@@ -68,6 +71,7 @@ def test_execute_returns_category_amounts_in_eur() -> None:
             mnemonic="ACME",
             namespace="NASDAQ",
             actif_category="Investissements",
+            actif_subcategory="Actions",
             balance=Decimal("2.0"),
         ),
     ]
@@ -97,3 +101,53 @@ def test_execute_returns_category_amounts_in_eur() -> None:
         "Investissements": Decimal("100.00"),
     }
     assert result.currency_code == "EUR"
+
+
+def test_execute_returns_subcategory_amounts_in_eur() -> None:
+    """Use case should aggregate asset subcategories when level=2."""
+    currency_row = [SimpleNamespace(guid="eur-guid")]
+    balances = [
+        SimpleNamespace(
+            account_type="BANK",
+            commodity_guid="usd-guid",
+            mnemonic="USD",
+            namespace="CURRENCY",
+            actif_category="Actifs actuels",
+            actif_subcategory="Liquidites",
+            balance=Decimal("100.00"),
+        ),
+        SimpleNamespace(
+            account_type="STOCK",
+            commodity_guid="stock-guid",
+            mnemonic="ACME",
+            namespace="NASDAQ",
+            actif_category="Investissements",
+            actif_subcategory="Actions",
+            balance=Decimal("2.0"),
+        ),
+    ]
+    prices = [
+        SimpleNamespace(
+            commodity_guid="usd-guid",
+            value_num=Decimal("9"),
+            value_denom=Decimal("10"),
+            date=date(2024, 1, 5),
+        ),
+        SimpleNamespace(
+            commodity_guid="stock-guid",
+            value_num=Decimal("50"),
+            value_denom=Decimal("1"),
+            date=date(2024, 1, 6),
+        ),
+    ]
+    db_port = _build_db_port([currency_row, balances, prices])
+
+    use_case = GetAssetCategoryBreakdownUseCase(db_port=db_port)
+
+    result = use_case.execute(end_date=date(2024, 1, 10), level=2)
+
+    categories = {item.category: item.amount for item in result.categories}
+    assert categories == {
+        "Actions": Decimal("100.00"),
+        "Liquidites": Decimal("90.00"),
+    }

@@ -57,21 +57,27 @@ def _load_net_worth_summary(
 
 def _fetch_asset_category_breakdown(
     end_date: date | None,
+    level: int,
 ) -> AssetCategoryBreakdown:
     """Fetch asset category breakdown in EUR."""
     adapter = SqlAlchemyDatabaseEngineAdapter()
     use_case = GetAssetCategoryBreakdownUseCase(db_port=adapter)
-    return use_case.execute(end_date=end_date, target_currency="EUR")
+    return use_case.execute(
+        end_date=end_date,
+        target_currency="EUR",
+        level=level,
+    )
 
 
 @st.cache_data(show_spinner=False)
 def _load_asset_category_breakdown(
     end_date: date | None,
+    level: int,
     schema_version: int = 1,
 ) -> AssetCategoryBreakdown:
     """Cached wrapper around _fetch_asset_category_breakdown."""
     _ = schema_version
-    return _fetch_asset_category_breakdown(end_date)
+    return _fetch_asset_category_breakdown(end_date, level)
 
 
 def _format_currency(value: Decimal, currency_code: str) -> str:
@@ -140,7 +146,8 @@ def _render_accounts(accounts: Sequence[AccountDTO]) -> None:
     filtered = []
     query_lower = query.strip().lower()
     for acc in accounts:
-        if account_type_filter != "All" and acc.account_type != account_type_filter:
+        if (account_type_filter != "All"
+                and acc.account_type != account_type_filter):
             continue
         if query_lower and query_lower not in acc.name.lower():
             continue
@@ -163,6 +170,7 @@ def _render_accounts(accounts: Sequence[AccountDTO]) -> None:
 
 def _render_asset_category_chart(
     breakdown: AssetCategoryBreakdown,
+    title: str,
 ) -> None:
     """Render a pie chart of asset amounts by category."""
     if not breakdown.categories:
@@ -173,7 +181,8 @@ def _render_asset_category_chart(
         {
             "category": item.category,
             "amount": float(item.amount),
-            "amount_label": _format_currency(item.amount, breakdown.currency_code),
+            "amount_label": _format_currency(item.amount,
+                                             breakdown.currency_code),
         }
         for item in breakdown.categories
     ]
@@ -188,7 +197,7 @@ def _render_asset_category_chart(
             ],
         },
     }
-    st.subheader("Assets by Category (€)")
+    st.subheader(title)
     st.vega_lite_chart(data, spec, width="stretch")
 
 
@@ -217,7 +226,9 @@ def main() -> None:
         )
 
         asset_delta = summary.asset_total - baseline_summary.asset_total
-        liability_delta = summary.liability_total - baseline_summary.liability_total
+        liability_delta = (
+            summary.liability_total - baseline_summary.liability_total
+        )
         net_worth_delta = summary.net_worth - baseline_summary.net_worth
 
         asset_delta_display = _format_delta_with_percent(
@@ -250,11 +261,31 @@ def main() -> None:
             _format_currency(summary.net_worth, currency_code),
             net_worth_delta_display,
         )
-        breakdown = _load_asset_category_breakdown(today, schema_version=1)
-        _render_asset_category_chart(breakdown)
+        breakdown_level_1 = _load_asset_category_breakdown(
+            today,
+            level=1,
+            schema_version=1,
+        )
+        breakdown_level_2 = _load_asset_category_breakdown(
+            today,
+            level=2,
+            schema_version=1,
+        )
+        chart_left, chart_right = st.columns(2)
+        with chart_left:
+            _render_asset_category_chart(
+                breakdown_level_1,
+                "Assets by Category (€)",
+            )
+        with chart_right:
+            _render_asset_category_chart(
+                breakdown_level_2,
+                "Assets by Subcategory (€)",
+            )
     else:
         accounts = _load_accounts()
-        st.caption(f"{len(accounts)} accounts synced from analytics.accounts_dim")
+        st.caption(f"{len(accounts)} accounts synced "
+                   f"from analytics.accounts_dim")
         if not accounts:
             st.warning("No accounts found. Run the sync first.")
             return

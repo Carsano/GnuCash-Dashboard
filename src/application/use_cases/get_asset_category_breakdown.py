@@ -56,6 +56,7 @@ class GetAssetCategoryBreakdownUseCase:
         start_date: date | None = None,
         end_date: date | None = None,
         target_currency: str = "EUR",
+        level: int = 1,
     ) -> AssetCategoryBreakdown:
         """Return the asset breakdown in the target currency.
 
@@ -63,6 +64,7 @@ class GetAssetCategoryBreakdownUseCase:
             start_date: Optional lower bound for transaction post dates.
             end_date: Optional upper bound for transaction post dates.
             target_currency: Currency code to convert into.
+            level: Depth level under the Actif root (1 or 2).
 
         Returns:
             AssetCategoryBreakdown: Aggregated asset totals by category.
@@ -85,6 +87,9 @@ class GetAssetCategoryBreakdownUseCase:
             account_type = row.account_type
             if account_type not in self._asset_types:
                 continue
+            category = self._resolve_category(row, level)
+            if not category:
+                continue
             balance = self._coerce_decimal(row.balance)
             converted = self._convert_balance(
                 balance,
@@ -97,8 +102,8 @@ class GetAssetCategoryBreakdownUseCase:
             )
             if converted is None:
                 continue
-            totals[row.actif_category] = (
-                totals.get(row.actif_category, Decimal("0")) + converted
+            totals[category] = (
+                totals.get(category, Decimal("0")) + converted
             )
 
         categories = [
@@ -120,14 +125,19 @@ class GetAssetCategoryBreakdownUseCase:
         WITH RECURSIVE account_tree AS (
             SELECT child.guid AS guid,
                    child.parent_guid AS parent_guid,
-                   child.name AS top_child_name
+                   child.name AS top_child_name,
+                   NULL::TEXT AS second_child_name
             FROM accounts root
             JOIN accounts child ON child.parent_guid = root.guid
             WHERE root.name = :actif_root
             UNION ALL
             SELECT a.guid,
                    a.parent_guid,
-                   at.top_child_name
+                   at.top_child_name,
+                   CASE
+                       WHEN at.second_child_name IS NULL THEN a.name
+                       ELSE at.second_child_name
+                   END AS second_child_name
             FROM account_tree at
             JOIN accounts a ON a.parent_guid = at.guid
         )
@@ -136,6 +146,7 @@ class GetAssetCategoryBreakdownUseCase:
                c.mnemonic AS mnemonic,
                c.namespace AS namespace,
                at.top_child_name AS actif_category,
+               at.second_child_name AS actif_subcategory,
                SUM(
                    CASE
                        WHEN c.namespace = 'CURRENCY'
@@ -156,7 +167,7 @@ class GetAssetCategoryBreakdownUseCase:
             base_sql += " AND t.post_date <= :end_date"
         base_sql += (
             " GROUP BY a.account_type, a.commodity_guid, c.mnemonic, "
-            "c.namespace, at.top_child_name"
+            "c.namespace, at.top_child_name, at.second_child_name"
         )
         return text(base_sql)
 
@@ -254,6 +265,14 @@ class GetAssetCategoryBreakdownUseCase:
             )
             return None
         return balance * rate
+
+    @staticmethod
+    def _resolve_category(row, level: int) -> str | None:
+        if level == 1:
+            return row.actif_category
+        if level == 2:
+            return row.actif_subcategory
+        return row.actif_category
 
 __all__ = [
     "GetAssetCategoryBreakdownUseCase",
