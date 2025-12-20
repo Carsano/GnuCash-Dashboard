@@ -174,17 +174,25 @@ def _render_asset_category_chart(
     title: str,
     max_categories: int = 6,
     chart_size: int = 300,
-    show_legend: bool = True,
+    row_height: int = 38,
+    min_height: int = 220,
+    height: int | None = None,
+    enable_selection: bool = False,
+    show_legend: bool = False,
     legend_columns: int = 3,
     palette: Sequence[str] | None = None,
 ) -> None:
-    """Render a donut chart of asset amounts by category.
+    """Render a horizontal bar chart of asset amounts by category.
 
     Args:
         breakdown: Aggregated asset totals by category.
-        title: Chart title to display above the donut.
+        title: Chart title to display above the chart.
         max_categories: Maximum categories before grouping into Other.
-        chart_size: Width/height for the chart canvas.
+        chart_size: Width for the chart canvas.
+        row_height: Height in pixels per category row.
+        min_height: Minimum chart height in pixels.
+        height: Optional explicit chart height override.
+        enable_selection: Whether clicking highlights one category.
         show_legend: Whether to display the legend.
         legend_columns: Column count when legend is shown.
         palette: Optional color palette override.
@@ -192,7 +200,6 @@ def _render_asset_category_chart(
     if not breakdown.categories:
         st.info("No asset amounts available for the chart.")
         return
-    inner_radius = chart_size * 0.4
     data, total_amount = _prepare_donut_chart_data(
         breakdown,
         max_categories=max_categories,
@@ -224,35 +231,50 @@ def _render_asset_category_chart(
         else None
     )
 
-    hover = alt.selection_point(
-        name="hover",
+    select_category = alt.selection_point(
         fields=["category"],
-        on="view:mouseover",
-        clear="view:mouseout",
-        empty=False,
+        on="click",
+        clear="dblclick",
+        empty="none",
     )
 
-    base = alt.Chart(alt.Data(values=data)).mark_arc(
-        innerRadius=inner_radius,
-        cornerRadius=8,
-        padAngle=0.02,
-        stroke="#0f1115",
-        strokeWidth=2,
+    bar_height = height or max(min_height, len(data) * row_height)
+    base = alt.Chart(alt.Data(values=data)).mark_bar(
+        cornerRadiusEnd=4
     ).encode(
-        theta=alt.Theta("amount:Q"),
+        x=alt.X(
+            "amount:Q",
+            axis=alt.Axis(
+                title=None,
+                grid=True,
+                labelColor="#e7ecf3",
+                tickColor="#2b313d",
+                gridColor="#212631",
+            ),
+        ),
+        y=alt.Y(
+            "category:N",
+            sort=alt.SortField(field="amount", order="descending"),
+            axis=alt.Axis(
+                title=None,
+                labelColor="#e7ecf3",
+                tickColor="#2b313d",
+            ),
+        ),
         color=alt.Color(
             "category:N",
-            scale=alt.Scale(
-                range=palette_scale
-            ),
+            scale=alt.Scale(range=palette_scale),
             legend=legend,
         ),
-        opacity=alt.condition(
-            hover,
-            alt.value(1.0),
-            alt.value(0.25),
+        opacity=(
+            alt.condition(
+                select_category,
+                alt.value(1.0),
+                alt.value(0.25),
+            )
+            if enable_selection
+            else alt.value(1.0)
         ),
-        order=alt.Order("amount:Q", sort="descending"),
         tooltip=[
             alt.Tooltip("category:N"),
             alt.Tooltip("amount_label:N"),
@@ -260,26 +282,48 @@ def _render_asset_category_chart(
         ],
     )
 
-    hover_text = alt.Chart(alt.Data(values=data)).transform_filter(
-        hover
-    ).mark_text(
-        align="center",
+    value_text = alt.Chart(alt.Data(values=data)).mark_text(
+        align="left",
         baseline="middle",
-        fontSize=16,
-        fontWeight="bold",
+        dx=8,
         color="#f5f7ff",
+        fontSize=12,
+        fontWeight="bold",
     ).encode(
-        text="amount_label:N"
+        x="amount:Q",
+        y=alt.Y(
+            "category:N",
+            sort=alt.SortField(field="amount", order="descending"),
+        ),
+        text=alt.Text("amount_label:N"),
     )
 
-    chart = alt.layer(base, hover_text).add_params(hover).properties(
+    percent_text = alt.Chart(alt.Data(values=data)).mark_text(
+        align="left",
+        baseline="middle",
+        dx=8,
+        dy=14,
+        color="#b9c1d1",
+        fontSize=11,
+    ).encode(
+        x="amount:Q",
+        y=alt.Y(
+            "category:N",
+            sort=alt.SortField(field="amount", order="descending"),
+        ),
+        text=alt.Text("share_label:N"),
+    )
+
+    chart = alt.layer(base, value_text, percent_text).properties(
         width=chart_size,
-        height=chart_size,
+        height=bar_height,
     ).configure_view(
         stroke=None
     ).configure_legend(
         labelColor="#e7ecf3"
     )
+    if enable_selection:
+        chart = chart.add_params(select_category)
     st.subheader(title)
     st.altair_chart(chart, width='stretch')
 
@@ -414,8 +458,9 @@ def main() -> None:
                 breakdown_level_1,
                 "Assets by Category (€)",
                 max_categories=5,
-                chart_size=400,
-                show_legend=True,
+                chart_size=360,
+                height=500,
+                enable_selection=True,
                 legend_columns=2,
             )
         with chart_right:
@@ -423,8 +468,8 @@ def main() -> None:
                 breakdown_level_2,
                 "Assets by Subcategory (€)",
                 max_categories=10,
-                chart_size=500,
-                show_legend=True,
+                chart_size=360,
+                height=500,
                 legend_columns=3,
             )
     else:
