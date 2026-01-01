@@ -8,22 +8,17 @@ from typing import Iterable
 from sqlalchemy import text
 
 from src.application.ports.database import DatabaseEnginePort
+from src.application.use_cases.constants import (
+    DEFAULT_ASSET_TYPES,
+    DEFAULT_LIABILITY_TYPES,
+)
+from src.application.use_cases.fx_utils import (
+    coerce_decimal,
+    convert_balance,
+    fetch_currency_guid,
+    fetch_latest_prices,
+)
 from src.infrastructure.logging.logger import get_app_logger
-
-
-DEFAULT_ASSET_TYPES = (
-    "ASSET",
-    "BANK",
-    "CASH",
-    "STOCK",
-    "MUTUAL",
-    "RECEIVABLE",
-)
-DEFAULT_LIABILITY_TYPES = (
-    "LIABILITY",
-    "CREDIT",
-    "PAYABLE",
-)
 
 
 @dataclass(frozen=True)
@@ -84,15 +79,16 @@ class GetNetWorthSummaryUseCase:
         """
         engine = self._db_port.get_gnucash_engine()
         with engine.connect() as conn:
-            currency_guid = self._fetch_currency_guid(conn, target_currency)
+            currency_guid = fetch_currency_guid(conn, target_currency)
             balances = conn.execute(
                 self._build_query(start_date, end_date),
                 self._build_params(start_date, end_date),
             ).all()
-            prices = self._fetch_latest_prices(
+            prices = fetch_latest_prices(
                 conn,
                 currency_guid,
                 end_date,
+                self._logger,
             )
 
         asset_total = Decimal("0")
@@ -102,8 +98,8 @@ class GetNetWorthSummaryUseCase:
             account_type = row.account_type
             if account_type not in self._asset_types and account_type not in self._liability_types:
                 continue
-            balance = self._coerce_decimal(row.balance)
-            converted = self._convert_balance(
+            balance = coerce_decimal(row.balance)
+            converted = convert_balance(
                 balance,
                 row.commodity_guid,
                 row.mnemonic,
@@ -111,6 +107,7 @@ class GetNetWorthSummaryUseCase:
                 currency_guid,
                 target_currency,
                 prices,
+                self._logger,
             )
             if converted is None:
                 continue
@@ -132,22 +129,6 @@ class GetNetWorthSummaryUseCase:
             net_worth=net_worth,
             currency_code=target_currency,
         )
-
-    @staticmethod
-    def _coerce_decimal(value) -> Decimal:
-        """Normalize numeric values to Decimal.
-
-        Args:
-            value: Raw numeric value from SQL.
-
-        Returns:
-            Decimal: Normalized numeric value.
-        """
-        if value is None:
-            return Decimal("0")
-        if isinstance(value, Decimal):
-            return value
-        return Decimal(str(value))
 
     @staticmethod
     def _build_query(
@@ -190,87 +171,5 @@ class GetNetWorthSummaryUseCase:
         if end_date:
             params["end_date"] = end_date
         return params
-
-    def _fetch_currency_guid(self, conn, currency: str) -> str:
-        query = text(
-            """
-            SELECT guid
-            FROM commodities
-            WHERE mnemonic = :currency AND namespace = 'CURRENCY'
-            LIMIT 1
-            """
-        )
-        result = conn.execute(query, {"currency": currency}).first()
-        if not result:
-            raise RuntimeError(f"Missing currency in commodities: {currency}")
-        return result.guid
-
-    def _fetch_latest_prices(
-        self,
-        conn,
-        currency_guid: str,
-        end_date: date | None,
-    ) -> dict[str, Decimal]:
-        query = text(
-            """
-            SELECT commodity_guid, value_num, value_denom, date
-            FROM prices
-            WHERE currency_guid = :currency_guid
-            """
-        )
-        params = {"currency_guid": currency_guid}
-        if end_date:
-            query = text(
-                query.text + " AND date <= :end_date"
-            )
-            params["end_date"] = end_date
-        query = text(query.text + " ORDER BY commodity_guid, date DESC")
-        rows = conn.execute(query, params).all()
-
-        rates: dict[str, Decimal] = {}
-        for row in rows:
-            if row.commodity_guid in rates:
-                continue
-            denom = self._coerce_decimal(row.value_denom)
-            if denom == 0:
-                self._logger.warning(
-                    f"Skipping FX rate with zero denominator "
-                    f"for {row.commodity_guid}"
-                )
-                continue
-            rates[row.commodity_guid] = (
-                self._coerce_decimal(row.value_num) / denom
-                )
-        return rates
-
-    def _convert_balance(
-        self,
-        balance: Decimal,
-        commodity_guid: str,
-        mnemonic: str,
-        namespace: str,
-        target_guid: str,
-        target_currency: str,
-        prices: dict[str, Decimal],
-    ) -> Decimal | None:
-        if not commodity_guid or not mnemonic:
-            self._logger.warning(
-                "Skipping account with missing commodity info"
-                )
-            return None
-        if namespace.upper() == "TEMPLATE" or mnemonic.lower() == "template":
-            return None
-        if namespace == "CURRENCY" and (
-            commodity_guid == target_guid or mnemonic == target_currency
-        ):
-            return balance
-        rate = prices.get(commodity_guid)
-        if rate is None:
-            self._logger.warning(
-                f"Missing FX rate for {mnemonic} to {target_currency}"
-            )
-            return None
-        return balance * rate
-
 
 __all__ = ["GetNetWorthSummaryUseCase", "NetWorthSummary"]
