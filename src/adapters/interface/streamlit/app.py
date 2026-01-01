@@ -484,7 +484,7 @@ def main() -> None:
     st.set_page_config(page_title="GnuCash Dashboard", layout="wide")
     st.title("GnuCash Dashboard")
 
-    page = st.sidebar.selectbox("Page", ["Dashboard", "Accounts"])
+    page = st.sidebar.radio("Page", ["Dashboard", "Accounts", "Budget"])
 
     if page == "Dashboard":
         today = date.today()
@@ -587,7 +587,7 @@ def main() -> None:
         left_col, right_col = st.columns([1, 2])
         left_col.altair_chart(left_chart, width="stretch")
         right_col.altair_chart(right_chart, width="stretch")
-    else:
+    elif page == "Accounts":
         accounts = _load_accounts()
         st.caption(f"{len(accounts)} accounts synced "
                    f"from analytics.accounts_dim")
@@ -595,6 +595,9 @@ def main() -> None:
             st.warning("No accounts found. Run the sync first.")
             return
         _render_accounts(accounts)
+    else:
+        st.subheader("Budget")
+        st.info("Budget view coming soon.")
 
 
 if __name__ == "__main__":  # pragma: no cover
