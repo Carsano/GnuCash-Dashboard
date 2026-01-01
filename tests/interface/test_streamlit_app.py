@@ -127,6 +127,9 @@ class _FakeSidebar:
     def __init__(self) -> None:
         self.selectbox_value = "Accounts"
 
+    def radio(self, _label: str, options):
+        return self.selectbox_value
+
     def selectbox(self, _label: str, options):
         return self.selectbox_value
 
