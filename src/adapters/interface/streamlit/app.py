@@ -123,6 +123,27 @@ def _get_period_start(
     return None
 
 
+def _get_date_inputs(today: date) -> tuple[date, date]:
+    """Return start/end dates chosen in the dashboard."""
+    start_col, end_col = st.columns(2)
+    with start_col:
+        start_date = st.date_input(
+            "Start date",
+            value=date(today.year, 1, 1),
+            max_value=today,
+        )
+    with end_col:
+        end_date = st.date_input(
+            "End date",
+            value=today,
+            max_value=today,
+        )
+    if start_date > end_date:
+        st.warning("Start date is after end date. Swapping values.")
+        start_date, end_date = end_date, start_date
+    return start_date, end_date
+
+
 def _zero_summary(currency_code: str) -> NetWorthSummary:
     """Return a zeroed net worth summary."""
     return NetWorthSummary(
@@ -466,15 +487,11 @@ def main() -> None:
     page = st.sidebar.selectbox("Page", ["Dashboard", "Accounts"])
 
     if page == "Dashboard":
-        period = st.selectbox(
-            "Period",
-            ["YTD", "MTD", "QTD", "All Time"],
-        )
         today = date.today()
-        start_date = _get_period_start(period, today)
-        baseline_end = start_date - timedelta(days=1) if start_date else None
+        start_date, end_date = _get_date_inputs(today)
+        baseline_end = start_date - timedelta(days=1)
 
-        summary = _load_net_worth_summary(None, today, schema_version=2)
+        summary = _load_net_worth_summary(None, end_date, schema_version=2)
         currency_code = getattr(summary, "currency_code", "EUR")
         baseline_summary = (
             _load_net_worth_summary(None, baseline_end, schema_version=2)
@@ -519,12 +536,12 @@ def main() -> None:
             net_worth_delta_display,
         )
         breakdown_level_1 = _load_asset_category_breakdown(
-            today,
+            end_date,
             level=1,
             schema_version=2,
         )
         breakdown_level_2 = _load_asset_category_breakdown(
-            today,
+            end_date,
             level=2,
             schema_version=2,
         )
