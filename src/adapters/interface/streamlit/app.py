@@ -219,7 +219,7 @@ def _render_asset_category_chart(
         legend_columns=legend_columns,
         palette=palette,
     )
-    st.altair_chart(chart, use_container_width=True)
+    st.altair_chart(chart, width="stretch")
 
 
 def _build_asset_category_chart(
@@ -466,7 +466,7 @@ def main() -> None:
     page = st.sidebar.selectbox("Page", ["Dashboard", "Accounts"])
 
     if page == "Dashboard":
-        period = st.sidebar.selectbox(
+        period = st.selectbox(
             "Period",
             ["YTD", "MTD", "QTD", "All Time"],
         )
@@ -568,8 +568,8 @@ def main() -> None:
             palette=None,
         )
         left_col, right_col = st.columns([1, 2])
-        left_col.altair_chart(left_chart, use_container_width=True)
-        right_col.altair_chart(right_chart, use_container_width=True)
+        left_col.altair_chart(left_chart, width="stretch")
+        right_col.altair_chart(right_chart, width="stretch")
     else:
         accounts = _load_accounts()
         st.caption(f"{len(accounts)} accounts synced "
