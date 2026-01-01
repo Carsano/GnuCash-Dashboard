@@ -200,4 +200,5 @@ class SyncAccountsUseCase:
         with analytics_engine.begin() as conn:
             conn.exec_driver_sql(CREATE_ACCOUNTS_DIM_SQL)
 
+
 __all__ = ["SyncAccountsUseCase", "SyncAccountsResult"]

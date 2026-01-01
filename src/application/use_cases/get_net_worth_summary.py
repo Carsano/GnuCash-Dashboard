@@ -234,10 +234,13 @@ class GetNetWorthSummaryUseCase:
             denom = self._coerce_decimal(row.value_denom)
             if denom == 0:
                 self._logger.warning(
-                    f"Skipping FX rate with zero denominator for {row.commodity_guid}"
+                    f"Skipping FX rate with zero denominator "
+                    f"for {row.commodity_guid}"
                 )
                 continue
-            rates[row.commodity_guid] = self._coerce_decimal(row.value_num) / denom
+            rates[row.commodity_guid] = (
+                self._coerce_decimal(row.value_num) / denom
+                )
         return rates
 
     def _convert_balance(
@@ -251,7 +254,9 @@ class GetNetWorthSummaryUseCase:
         prices: dict[str, Decimal],
     ) -> Decimal | None:
         if not commodity_guid or not mnemonic:
-            self._logger.warning("Skipping account with missing commodity info")
+            self._logger.warning(
+                "Skipping account with missing commodity info"
+                )
             return None
         if namespace.upper() == "TEMPLATE" or mnemonic.lower() == "template":
             return None

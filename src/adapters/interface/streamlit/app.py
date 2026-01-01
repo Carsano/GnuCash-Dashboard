@@ -194,7 +194,7 @@ def _render_asset_category_chart(
     breakdown: AssetCategoryBreakdown,
     title: str,
     max_categories: int = 6,
-    chart_size: int | str = 300,
+    chart_size: int | str | None = 300,
     row_height: int = 38,
     min_height: int = 220,
     height: int | None = None,
@@ -247,7 +247,7 @@ def _build_asset_category_chart(
     breakdown: AssetCategoryBreakdown,
     title: str,
     max_categories: int,
-    chart_size: int | str,
+    chart_size: int | str | None,
     row_height: int,
     min_height: int,
     height: int | None,
@@ -397,8 +397,10 @@ def _build_asset_category_chart(
         value_text = value_text.transform_filter(selection)
         percent_text = percent_text.transform_filter(selection)
 
-    chart = alt.layer(base, value_text, percent_text).properties(
-        width=chart_size,
+    chart = alt.layer(base, value_text, percent_text)
+    if chart_size is not None:
+        chart = chart.properties(width=chart_size)
+    chart = chart.properties(
         height=bar_height,
         title=alt.TitleParams(
             text=title,
@@ -556,7 +558,7 @@ def main() -> None:
             breakdown=breakdown_level_1,
             title="Assets by Category (€)",
             max_categories=5,
-            chart_size="container",
+            chart_size=None,
             row_height=38,
             min_height=220,
             height=500,
@@ -572,7 +574,7 @@ def main() -> None:
             breakdown=breakdown_level_2,
             title="Assets by Subcategory (€)",
             max_categories=10,
-            chart_size="container",
+            chart_size=None,
             row_height=38,
             min_height=220,
             height=500,
@@ -584,9 +586,14 @@ def main() -> None:
             legend_columns=3,
             palette=None,
         )
-        left_col, right_col = st.columns([1, 2])
-        left_col.altair_chart(left_chart, width="stretch")
-        right_col.altair_chart(right_chart, width="stretch")
+        combined = alt.hconcat(left_chart, right_chart, spacing=16).properties(
+            title=alt.TitleParams(text="")
+        ).configure_view(
+            stroke=None
+        ).configure_legend(
+            labelColor="#e7ecf3"
+        )
+        st.altair_chart(combined, width="stretch")
     elif page == "Accounts":
         accounts = _load_accounts()
         st.caption(f"{len(accounts)} accounts synced "
