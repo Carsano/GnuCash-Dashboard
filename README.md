@@ -50,6 +50,7 @@ GnuCash (PostgreSQL) -> Transformation job -> Analytics schema/views -> Streamli
    - create a read-only role pointing to the existing GnuCash database;
    - create a separate schema/database (`finances_analytics`) for derived tables;
    - set environment variables `GNUCASH_DB_URL` and `ANALYTICS_DB_URL` (can be the same DB with two schemas).
+   - optional: set `GNUCASH_BACKEND=piecash` and `PIECASH_FILE=/path/to/book.gnucash` when switching to piecash (adapter TODO).
 4. **Schedule synchronization**:
    - run `uv run python sync_gnucash.py` via cron/systemd or GitHub Actions to refresh analytics tables.
 

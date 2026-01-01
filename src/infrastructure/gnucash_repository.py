@@ -1,7 +1,6 @@
 """SQLAlchemy-backed repository for GnuCash reporting data."""
 
 from datetime import date
-from decimal import Decimal
 
 from sqlalchemy import text
 
@@ -12,6 +11,7 @@ from src.application.ports.gnucash_repository import (
     NetWorthBalanceRow,
     PriceRow,
 )
+from src.utils.decimal_utils import coerce_decimal
 
 
 class SqlAlchemyGnuCashRepository(GnuCashRepositoryPort):
@@ -51,16 +51,25 @@ class SqlAlchemyGnuCashRepository(GnuCashRepositoryPort):
         engine = self._db_port.get_gnucash_engine()
         with engine.connect() as conn:
             rows = conn.execute(query, params).all()
-        return [
+        balances = [
             NetWorthBalanceRow(
                 account_type=row.account_type,
                 commodity_guid=row.commodity_guid,
                 mnemonic=row.mnemonic,
                 namespace=row.namespace,
-                balance=self._coerce_decimal(row.balance),
+                balance=coerce_decimal(row.balance),
             )
             for row in rows
         ]
+        return sorted(
+            balances,
+            key=lambda row: (
+                row.account_type,
+                row.commodity_guid or "",
+                row.mnemonic or "",
+                row.namespace or "",
+            ),
+        )
 
     def fetch_asset_category_balances(
         self,
@@ -74,7 +83,7 @@ class SqlAlchemyGnuCashRepository(GnuCashRepositoryPort):
         engine = self._db_port.get_gnucash_engine()
         with engine.connect() as conn:
             rows = conn.execute(query, params).all()
-        return [
+        balances = [
             AssetCategoryBalanceRow(
                 account_type=row.account_type,
                 commodity_guid=row.commodity_guid,
@@ -82,10 +91,21 @@ class SqlAlchemyGnuCashRepository(GnuCashRepositoryPort):
                 namespace=row.namespace,
                 actif_category=row.actif_category,
                 actif_subcategory=row.actif_subcategory,
-                balance=self._coerce_decimal(row.balance),
+                balance=coerce_decimal(row.balance),
             )
             for row in rows
         ]
+        return sorted(
+            balances,
+            key=lambda row: (
+                row.actif_category or "",
+                row.actif_subcategory or "",
+                row.account_type,
+                row.commodity_guid or "",
+                row.mnemonic or "",
+                row.namespace or "",
+            ),
+        )
 
     def fetch_latest_prices(
         self,
@@ -107,23 +127,20 @@ class SqlAlchemyGnuCashRepository(GnuCashRepositoryPort):
         engine = self._db_port.get_gnucash_engine()
         with engine.connect() as conn:
             rows = conn.execute(query, params).all()
-        return [
+        prices = [
             PriceRow(
                 commodity_guid=row.commodity_guid,
-                value_num=self._coerce_decimal(row.value_num),
-                value_denom=self._coerce_decimal(row.value_denom),
+                value_num=coerce_decimal(row.value_num),
+                value_denom=coerce_decimal(row.value_denom),
                 date=row.date,
             )
             for row in rows
         ]
-
-    @staticmethod
-    def _coerce_decimal(value) -> Decimal:
-        if value is None:
-            return Decimal("0")
-        if isinstance(value, Decimal):
-            return value
-        return Decimal(str(value))
+        return sorted(
+            prices,
+            key=lambda row: (row.commodity_guid, row.date),
+            reverse=True,
+        )
 
     @staticmethod
     def _build_date_params(

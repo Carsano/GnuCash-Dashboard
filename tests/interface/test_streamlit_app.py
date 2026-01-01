@@ -63,7 +63,7 @@ def test_fetch_net_worth_summary_invokes_use_case(monkeypatch):
     )
     monkeypatch.setattr(
         app,
-        "SqlAlchemyGnuCashRepository",
+        "create_gnucash_repository",
         lambda _adapter: "repository",
     )
     monkeypatch.setattr(

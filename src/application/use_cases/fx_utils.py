@@ -4,22 +4,7 @@ from decimal import Decimal
 from logging import Logger
 
 from src.application.ports.gnucash_repository import PriceRow
-
-
-def coerce_decimal(value) -> Decimal:
-    """Normalize numeric values to Decimal.
-
-    Args:
-        value: Raw numeric value from SQL.
-
-    Returns:
-        Decimal: Normalized numeric value.
-    """
-    if value is None:
-        return Decimal("0")
-    if isinstance(value, Decimal):
-        return value
-    return Decimal(str(value))
+from src.utils.decimal_utils import coerce_decimal
 
 
 def build_price_map(
