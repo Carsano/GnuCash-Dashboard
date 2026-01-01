@@ -50,8 +50,8 @@ def test_fetch_net_worth_summary_invokes_use_case(monkeypatch):
     )
 
     class _FakeUseCase:
-        def __init__(self, db_port):
-            self.db_port = db_port
+        def __init__(self, gnucash_repository):
+            self.gnucash_repository = gnucash_repository
 
         def execute(self, start_date=None, end_date=None):
             return fake_summary
@@ -63,8 +63,13 @@ def test_fetch_net_worth_summary_invokes_use_case(monkeypatch):
     )
     monkeypatch.setattr(
         app,
+        "SqlAlchemyGnuCashRepository",
+        lambda _adapter: "repository",
+    )
+    monkeypatch.setattr(
+        app,
         "GetNetWorthSummaryUseCase",
-        lambda db_port: _FakeUseCase(db_port),
+        lambda gnucash_repository: _FakeUseCase(gnucash_repository),
     )
 
     result = app._fetch_net_worth_summary(start_date=None, end_date=None)

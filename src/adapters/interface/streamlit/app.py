@@ -20,6 +20,7 @@ from src.application.use_cases.get_asset_category_breakdown import (
     GetAssetCategoryBreakdownUseCase,
 )
 from src.infrastructure.db import SqlAlchemyDatabaseEngineAdapter
+from src.infrastructure.gnucash_repository import SqlAlchemyGnuCashRepository
 
 
 def _fetch_accounts() -> Sequence[AccountDTO]:
@@ -41,7 +42,10 @@ def _fetch_net_worth_summary(
 ) -> NetWorthSummary:
     """Fetch the net worth summary from the GnuCash database."""
     adapter = SqlAlchemyDatabaseEngineAdapter()
-    use_case = GetNetWorthSummaryUseCase(db_port=adapter)
+    gnucash_repository = SqlAlchemyGnuCashRepository(adapter)
+    use_case = GetNetWorthSummaryUseCase(
+        gnucash_repository=gnucash_repository
+    )
     return use_case.execute(start_date=start_date, end_date=end_date)
 
 
@@ -62,7 +66,10 @@ def _fetch_asset_category_breakdown(
 ) -> AssetCategoryBreakdown:
     """Fetch asset category breakdown in EUR."""
     adapter = SqlAlchemyDatabaseEngineAdapter()
-    use_case = GetAssetCategoryBreakdownUseCase(db_port=adapter)
+    gnucash_repository = SqlAlchemyGnuCashRepository(adapter)
+    use_case = GetAssetCategoryBreakdownUseCase(
+        gnucash_repository=gnucash_repository
+    )
     return use_case.execute(
         end_date=end_date,
         target_currency="EUR",

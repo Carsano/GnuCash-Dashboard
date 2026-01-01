@@ -1,10 +1,9 @@
 """Shared helpers for currency conversion in application use cases."""
 
-from datetime import date
 from decimal import Decimal
 from logging import Logger
 
-from sqlalchemy import text
+from src.application.ports.gnucash_repository import PriceRow
 
 
 def coerce_decimal(value) -> Decimal:
@@ -23,61 +22,19 @@ def coerce_decimal(value) -> Decimal:
     return Decimal(str(value))
 
 
-def fetch_currency_guid(conn, currency: str) -> str:
-    """Fetch the GUID for a currency mnemonic.
-
-    Args:
-        conn: SQLAlchemy connection to the GnuCash database.
-        currency: Currency mnemonic (e.g., EUR).
-
-    Returns:
-        str: GUID for the matching currency commodity.
-    """
-    query = text(
-        """
-        SELECT guid
-        FROM commodities
-        WHERE mnemonic = :currency AND namespace = 'CURRENCY'
-        LIMIT 1
-        """
-    )
-    result = conn.execute(query, {"currency": currency}).first()
-    if not result:
-        raise RuntimeError(f"Missing currency in commodities: {currency}")
-    return result.guid
-
-
-def fetch_latest_prices(
-    conn,
-    currency_guid: str,
-    end_date: date | None,
+def build_price_map(
+    rows: list[PriceRow],
     logger: Logger,
 ) -> dict[str, Decimal]:
-    """Fetch latest FX rates for each commodity.
+    """Build the latest FX rate mapping from price rows.
 
     Args:
-        conn: SQLAlchemy connection to the GnuCash database.
-        currency_guid: GUID of the target currency.
-        end_date: Optional upper bound for price dates.
+        rows: Price rows sorted by commodity/date (newest first).
         logger: Logger used for warnings.
 
     Returns:
         dict[str, Decimal]: Latest FX rate per commodity GUID.
     """
-    query = text(
-        """
-        SELECT commodity_guid, value_num, value_denom, date
-        FROM prices
-        WHERE currency_guid = :currency_guid
-        """
-    )
-    params = {"currency_guid": currency_guid}
-    if end_date:
-        query = text(query.text + " AND date <= :end_date")
-        params["end_date"] = end_date
-    query = text(query.text + " ORDER BY commodity_guid, date DESC")
-    rows = conn.execute(query, params).all()
-
     rates: dict[str, Decimal] = {}
     for row in rows:
         if row.commodity_guid in rates:
@@ -136,4 +93,4 @@ def convert_balance(
     return balance * rate
 
 
-__all__ = ["coerce_decimal", "fetch_currency_guid", "fetch_latest_prices", "convert_balance"]
+__all__ = ["coerce_decimal", "build_price_map", "convert_balance"]

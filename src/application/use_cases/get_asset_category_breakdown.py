@@ -5,15 +5,12 @@ from datetime import date
 from decimal import Decimal
 from typing import Iterable
 
-from sqlalchemy import text
-
-from src.application.ports.database import DatabaseEnginePort
+from src.application.ports.gnucash_repository import GnuCashRepositoryPort
 from src.application.use_cases.constants import DEFAULT_ASSET_TYPES
 from src.application.use_cases.fx_utils import (
+    build_price_map,
     coerce_decimal,
     convert_balance,
-    fetch_currency_guid,
-    fetch_latest_prices,
 )
 from src.infrastructure.logging.logger import get_app_logger
 
@@ -40,7 +37,7 @@ class GetAssetCategoryBreakdownUseCase:
 
     def __init__(
         self,
-        db_port: DatabaseEnginePort,
+        gnucash_repository: GnuCashRepositoryPort,
         logger=None,
         asset_types: Iterable[str] | None = None,
         actif_root_name: str = "Actif",
@@ -48,12 +45,12 @@ class GetAssetCategoryBreakdownUseCase:
         """Initialize the use case.
 
         Args:
-            db_port: Port providing access to the GnuCash engine.
+            gnucash_repository: Port providing GnuCash reporting data.
             logger: Optional logger compatible with logging.Logger-like API.
             asset_types: Optional iterable of account types treated as assets.
             actif_root_name: Name of the root account containing asset buckets.
         """
-        self._db_port = db_port
+        self._gnucash_repository = gnucash_repository
         self._logger = logger or get_app_logger()
         self._asset_types = tuple(asset_types or DEFAULT_ASSET_TYPES)
         self._actif_root_name = actif_root_name
@@ -76,19 +73,19 @@ class GetAssetCategoryBreakdownUseCase:
         Returns:
             AssetCategoryBreakdown: Aggregated asset totals by category.
         """
-        engine = self._db_port.get_gnucash_engine()
-        with engine.connect() as conn:
-            currency_guid = fetch_currency_guid(conn, target_currency)
-            rows = conn.execute(
-                self._build_query(start_date, end_date),
-                self._build_params(start_date, end_date),
-            ).all()
-            prices = fetch_latest_prices(
-                conn,
-                currency_guid,
-                end_date,
-                self._logger,
-            )
+        currency_guid = self._gnucash_repository.fetch_currency_guid(
+            target_currency
+        )
+        rows = self._gnucash_repository.fetch_asset_category_balances(
+            start_date,
+            end_date,
+            self._actif_root_name,
+        )
+        price_rows = self._gnucash_repository.fetch_latest_prices(
+            currency_guid,
+            end_date,
+        )
+        prices = build_price_map(price_rows, self._logger)
 
         totals: dict[tuple[str | None, str], Decimal] = {}
         for row in rows:
@@ -132,74 +129,6 @@ class GetAssetCategoryBreakdownUseCase:
             currency_code=target_currency,
             categories=categories,
         )
-
-    @staticmethod
-    def _build_query(
-        start_date: date | None,
-        end_date: date | None,
-    ):
-        base_sql = """
-        WITH RECURSIVE account_tree AS (
-            SELECT child.guid AS guid,
-                   child.parent_guid AS parent_guid,
-                   child.name AS top_child_name,
-                   NULL::TEXT AS second_child_name
-            FROM accounts root
-            JOIN accounts child ON child.parent_guid = root.guid
-            WHERE root.name = :actif_root
-            UNION ALL
-            SELECT a.guid,
-                   a.parent_guid,
-                   at.top_child_name,
-                   CASE
-                       WHEN at.second_child_name IS NULL THEN a.name
-                       ELSE at.second_child_name
-                   END AS second_child_name
-            FROM account_tree at
-            JOIN accounts a ON a.parent_guid = at.guid
-        )
-        SELECT a.account_type AS account_type,
-               a.commodity_guid AS commodity_guid,
-               c.mnemonic AS mnemonic,
-               c.namespace AS namespace,
-               at.top_child_name AS actif_category,
-               at.second_child_name AS actif_subcategory,
-               SUM(
-                   CASE
-                       WHEN c.namespace = 'CURRENCY'
-                           THEN CAST(s.value_num AS NUMERIC) / NULLIF(s.value_denom, 0)
-                       ELSE CAST(s.quantity_num AS NUMERIC) / NULLIF(s.quantity_denom, 0)
-                   END
-               ) AS balance
-        FROM accounts a
-        JOIN account_tree at ON at.guid = a.guid
-        JOIN commodities c ON c.guid = a.commodity_guid
-        JOIN splits s ON s.account_guid = a.guid
-        JOIN transactions t ON t.guid = s.tx_guid
-        WHERE at.top_child_name IS NOT NULL
-        """
-        if start_date:
-            base_sql += " AND t.post_date >= :start_date"
-        if end_date:
-            base_sql += " AND t.post_date <= :end_date"
-        base_sql += (
-            " GROUP BY a.account_type, a.commodity_guid, c.mnemonic, "
-            "c.namespace, at.top_child_name, at.second_child_name"
-        )
-        return text(base_sql)
-
-    def _build_params(
-        self,
-        start_date: date | None,
-        end_date: date | None,
-    ) -> dict[str, date | str]:
-        params: dict[str, date | str] = {}
-        params["actif_root"] = self._actif_root_name
-        if start_date:
-            params["start_date"] = start_date
-        if end_date:
-            params["end_date"] = end_date
-        return params
 
     @staticmethod
     def _resolve_category(row, level: int) -> str | None:

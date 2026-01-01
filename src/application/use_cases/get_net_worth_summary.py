@@ -5,18 +5,15 @@ from datetime import date
 from decimal import Decimal
 from typing import Iterable
 
-from sqlalchemy import text
-
-from src.application.ports.database import DatabaseEnginePort
+from src.application.ports.gnucash_repository import GnuCashRepositoryPort
 from src.application.use_cases.constants import (
     DEFAULT_ASSET_TYPES,
     DEFAULT_LIABILITY_TYPES,
 )
 from src.application.use_cases.fx_utils import (
+    build_price_map,
     coerce_decimal,
     convert_balance,
-    fetch_currency_guid,
-    fetch_latest_prices,
 )
 from src.infrastructure.logging.logger import get_app_logger
 
@@ -42,7 +39,7 @@ class GetNetWorthSummaryUseCase:
 
     def __init__(
         self,
-        db_port: DatabaseEnginePort,
+        gnucash_repository: GnuCashRepositoryPort,
         logger=None,
         asset_types: Iterable[str] | None = None,
         liability_types: Iterable[str] | None = None,
@@ -50,12 +47,12 @@ class GetNetWorthSummaryUseCase:
         """Initialize the use case.
 
         Args:
-            db_port: Port providing access to the GnuCash engine.
+            gnucash_repository: Port providing GnuCash reporting data.
             logger: Optional logger compatible with logging.Logger-like API.
             asset_types: Optional iterable of account types treated as assets.
             liability_types: Optional iterable treated as liabilities.
         """
-        self._db_port = db_port
+        self._gnucash_repository = gnucash_repository
         self._logger = logger or get_app_logger()
         self._asset_types = tuple(asset_types or DEFAULT_ASSET_TYPES)
         self._liability_types = tuple(
@@ -77,19 +74,18 @@ class GetNetWorthSummaryUseCase:
         Returns:
             NetWorthSummary: Computed asset, liability, and net worth totals.
         """
-        engine = self._db_port.get_gnucash_engine()
-        with engine.connect() as conn:
-            currency_guid = fetch_currency_guid(conn, target_currency)
-            balances = conn.execute(
-                self._build_query(start_date, end_date),
-                self._build_params(start_date, end_date),
-            ).all()
-            prices = fetch_latest_prices(
-                conn,
-                currency_guid,
-                end_date,
-                self._logger,
-            )
+        currency_guid = self._gnucash_repository.fetch_currency_guid(
+            target_currency
+        )
+        balances = self._gnucash_repository.fetch_net_worth_balances(
+            start_date,
+            end_date,
+        )
+        price_rows = self._gnucash_repository.fetch_latest_prices(
+            currency_guid,
+            end_date,
+        )
+        prices = build_price_map(price_rows, self._logger)
 
         asset_total = Decimal("0")
         liability_total = Decimal("0")
@@ -129,47 +125,5 @@ class GetNetWorthSummaryUseCase:
             net_worth=net_worth,
             currency_code=target_currency,
         )
-
-    @staticmethod
-    def _build_query(
-        start_date: date | None,
-        end_date: date | None,
-    ):
-        base_sql = """
-        SELECT a.account_type AS account_type,
-               a.commodity_guid AS commodity_guid,
-               c.mnemonic AS mnemonic,
-               c.namespace AS namespace,
-               SUM(
-                   CASE
-                       WHEN c.namespace = 'CURRENCY'
-                           THEN CAST(s.value_num AS NUMERIC) / NULLIF(s.value_denom, 0)
-                       ELSE CAST(s.quantity_num AS NUMERIC) / NULLIF(s.quantity_denom, 0)
-                   END
-               ) AS balance
-        FROM accounts a
-        JOIN commodities c ON c.guid = a.commodity_guid
-        JOIN splits s ON s.account_guid = a.guid
-        JOIN transactions t ON t.guid = s.tx_guid
-        WHERE 1=1
-        """
-        if start_date:
-            base_sql += " AND t.post_date >= :start_date"
-        if end_date:
-            base_sql += " AND t.post_date <= :end_date"
-        base_sql += " GROUP BY a.account_type, a.commodity_guid, c.mnemonic, c.namespace"
-        return text(base_sql)
-
-    @staticmethod
-    def _build_params(
-        start_date: date | None,
-        end_date: date | None,
-    ) -> dict[str, date]:
-        params: dict[str, date] = {}
-        if start_date:
-            params["start_date"] = start_date
-        if end_date:
-            params["end_date"] = end_date
-        return params
 
 __all__ = ["GetNetWorthSummaryUseCase", "NetWorthSummary"]
