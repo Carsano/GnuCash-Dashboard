@@ -10,21 +10,21 @@ def test_fetch_accounts_invokes_use_case(monkeypatch):
     fake_accounts = ["a"]
 
     class _FakeUseCase:
-        def __init__(self, db_port):
-            self.db_port = db_port
+        def __init__(self, repository):
+            self.repository = repository
 
         def execute(self):
             return fake_accounts
 
     monkeypatch.setattr(
         app,
-        "build_database_adapter",
-        lambda: "adapter",
+        "build_accounts_repository",
+        lambda: "repository",
     )
     monkeypatch.setattr(
         app,
         "GetAccountsUseCase",
-        lambda db_port: _FakeUseCase(db_port),
+        lambda repository: _FakeUseCase(repository),
     )
 
     result = app._fetch_accounts()
@@ -58,13 +58,8 @@ def test_fetch_net_worth_summary_invokes_use_case(monkeypatch):
 
     monkeypatch.setattr(
         app,
-        "build_database_adapter",
-        lambda: "adapter",
-    )
-    monkeypatch.setattr(
-        app,
-        "build_gnucash_repository",
-        lambda _adapter: "repository",
+        "build_analytics_repository",
+        lambda: "repository",
     )
     monkeypatch.setattr(
         app,

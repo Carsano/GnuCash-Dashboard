@@ -1,6 +1,6 @@
 """Tests for account filtering helpers."""
 
-from src.application.use_cases.account_filters import is_valid_account_name
+from src.domain.policies.account_filters import is_valid_account_name
 
 
 def test_is_valid_account_name_rejects_empty_or_whitespace() -> None:

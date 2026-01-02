@@ -1,9 +1,9 @@
-"""Shared helpers for currency conversion in application use cases."""
+"""Domain helpers for currency conversion."""
 
 from decimal import Decimal
 from logging import Logger
 
-from src.application.ports.gnucash_repository import PriceRow
+from src.domain.models import PriceRow
 from src.utils.decimal_utils import coerce_decimal
 
 
@@ -78,4 +78,4 @@ def convert_balance(
     return balance * rate
 
 
-__all__ = ["coerce_decimal", "build_price_map", "convert_balance"]
+__all__ = ["build_price_map", "convert_balance"]

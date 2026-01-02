@@ -1,4 +1,4 @@
-"""Shared constants for application use cases."""
+"""Domain constants for finance analytics."""
 
 DEFAULT_ASSET_TYPES = (
     "ASSET",

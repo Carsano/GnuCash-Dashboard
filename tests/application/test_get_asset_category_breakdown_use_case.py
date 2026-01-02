@@ -4,10 +4,7 @@ from datetime import date
 from decimal import Decimal
 from unittest.mock import MagicMock
 
-from src.application.ports.gnucash_repository import (
-    AssetCategoryBalanceRow,
-    PriceRow,
-)
+from src.domain.models import AssetCategoryBalanceRow, PriceRow
 from src.application.use_cases.get_asset_category_breakdown import (
     GetAssetCategoryBreakdownUseCase,
 )

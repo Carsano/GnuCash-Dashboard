@@ -20,16 +20,16 @@ from src.application.use_cases.get_asset_category_breakdown import (
     GetAssetCategoryBreakdownUseCase,
 )
 from src.infrastructure.container import (
-    build_database_adapter,
-    build_gnucash_repository,
+    build_accounts_repository,
+    build_analytics_repository,
 )
 from src.infrastructure.logging.logger import get_app_logger
 
 
 def _fetch_accounts() -> Sequence[AccountDTO]:
     """Fetch accounts using the analytics database."""
-    adapter = build_database_adapter()
-    use_case = GetAccountsUseCase(db_port=adapter)
+    repository = build_accounts_repository()
+    use_case = GetAccountsUseCase(repository=repository)
     return use_case.execute()
 
 
@@ -43,9 +43,8 @@ def _fetch_net_worth_summary(
     start_date: date | None,
     end_date: date | None,
 ) -> NetWorthSummary:
-    """Fetch the net worth summary from the GnuCash database."""
-    adapter = build_database_adapter()
-    gnucash_repository = build_gnucash_repository(adapter)
+    """Fetch the net worth summary from the analytics database."""
+    gnucash_repository = build_analytics_repository()
     use_case = GetNetWorthSummaryUseCase(
         gnucash_repository=gnucash_repository
     )
@@ -67,9 +66,8 @@ def _fetch_asset_category_breakdown(
     end_date: date | None,
     level: int,
 ) -> AssetCategoryBreakdown:
-    """Fetch asset category breakdown in EUR."""
-    adapter = build_database_adapter()
-    gnucash_repository = build_gnucash_repository(adapter)
+    """Fetch asset category breakdown in EUR from analytics."""
+    gnucash_repository = build_analytics_repository()
     use_case = GetAssetCategoryBreakdownUseCase(
         gnucash_repository=gnucash_repository
     )

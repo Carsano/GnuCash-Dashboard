@@ -1,15 +1,28 @@
 """Composition root for wiring infrastructure adapters."""
 
+import os
+
 from src.application.ports.accounts_sync import (
     AccountsDestinationPort,
     AccountsSourcePort,
 )
+from src.application.ports.accounts_repository import AccountsRepositoryPort
+from src.application.ports.analytics_repository import AnalyticsRepositoryPort
 from src.application.ports.database import DatabaseEnginePort
 from src.application.ports.gnucash_repository import GnuCashRepositoryPort
 from src.infrastructure.accounts_sync import (
     PieCashAccountsSource,
     SqlAlchemyAccountsDestination,
     SqlAlchemyAccountsSource,
+)
+from src.infrastructure.accounts_repository import (
+    SqlAlchemyAccountsRepository,
+)
+from src.infrastructure.analytics_gnucash_repository import (
+    AnalyticsGnuCashRepository,
+)
+from src.infrastructure.analytics_views_repository import (
+    AnalyticsViewsRepository,
 )
 from src.infrastructure.db import SqlAlchemyDatabaseEngineAdapter
 from src.infrastructure.gnucash_repository_factory import (
@@ -63,9 +76,30 @@ def build_accounts_destination(
     return SqlAlchemyAccountsDestination(resolved_db)
 
 
+def build_accounts_repository(
+    db_port: DatabaseEnginePort | None = None,
+) -> AccountsRepositoryPort:
+    """Return the analytics accounts repository."""
+    resolved_db = db_port or build_database_adapter()
+    return SqlAlchemyAccountsRepository(resolved_db)
+
+
+def build_analytics_repository(
+    db_port: DatabaseEnginePort | None = None,
+) -> AnalyticsRepositoryPort:
+    """Return the analytics repository for dashboard reads."""
+    resolved_db = db_port or build_database_adapter()
+    mode = os.getenv("ANALYTICS_READ_MODE", "tables").strip().lower()
+    if mode == "views":
+        return AnalyticsViewsRepository(resolved_db)
+    return AnalyticsGnuCashRepository(resolved_db)
+
+
 __all__ = [
     "build_database_adapter",
     "build_gnucash_repository",
     "build_accounts_source",
     "build_accounts_destination",
+    "build_accounts_repository",
+    "build_analytics_repository",
 ]

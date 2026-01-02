@@ -4,10 +4,7 @@ from datetime import date
 from decimal import Decimal
 from unittest.mock import MagicMock
 
-from src.application.ports.gnucash_repository import (
-    NetWorthBalanceRow,
-    PriceRow,
-)
+from src.domain.models import NetWorthBalanceRow, PriceRow
 from src.application.use_cases.get_net_worth_summary import (
     GetNetWorthSummaryUseCase,
 )

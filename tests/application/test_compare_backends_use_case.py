@@ -2,7 +2,7 @@
 
 from decimal import Decimal
 
-from src.application.ports.gnucash_repository import (
+from src.domain.models import (
     AssetCategoryBalanceRow,
     NetWorthBalanceRow,
     PriceRow,

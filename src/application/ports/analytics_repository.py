@@ -1,4 +1,4 @@
-"""Application port for GnuCash data access."""
+"""Port for analytics-backed finance reads."""
 
 from datetime import date
 from typing import Protocol
@@ -10,8 +10,8 @@ from src.domain.models import (
 )
 
 
-class GnuCashRepositoryPort(Protocol):
-    """Port exposing read access to GnuCash reporting data."""
+class AnalyticsRepositoryPort(Protocol):
+    """Port exposing analytics data needed for dashboard computations."""
 
     def fetch_currency_guid(self, currency: str) -> str:
         """Return the GUID for a currency mnemonic."""
@@ -39,9 +39,4 @@ class GnuCashRepositoryPort(Protocol):
         """Return the latest price rows per commodity."""
 
 
-__all__ = [
-    "GnuCashRepositoryPort",
-    "NetWorthBalanceRow",
-    "AssetCategoryBalanceRow",
-    "PriceRow",
-]
+__all__ = ["AnalyticsRepositoryPort"]

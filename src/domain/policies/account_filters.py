@@ -1,5 +1,4 @@
-"""Shared account filtering helpers for application use cases."""
-
+"""Domain policies for account hygiene."""
 
 _HEX_CHARS = set("0123456789abcdef")
 
@@ -21,3 +20,6 @@ def is_valid_account_name(name: str) -> bool:
         if all(char in _HEX_CHARS for char in lowered):
             return False
     return True
+
+
+__all__ = ["is_valid_account_name"]

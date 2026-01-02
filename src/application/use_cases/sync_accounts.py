@@ -14,7 +14,7 @@ from src.application.ports.accounts_sync import (
     AccountsDestinationPort,
     AccountsSourcePort,
 )
-from src.application.use_cases.account_filters import is_valid_account_name
+from src.domain.policies.account_filters import is_valid_account_name
 from src.infrastructure.logging.logger import get_app_logger
 
 

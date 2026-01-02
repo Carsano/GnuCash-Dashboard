@@ -4,9 +4,9 @@ from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
 
-from src.application.ports.gnucash_repository import (
+from src.application.ports.gnucash_repository import GnuCashRepositoryPort
+from src.domain.models import (
     AssetCategoryBalanceRow,
-    GnuCashRepositoryPort,
     NetWorthBalanceRow,
     PriceRow,
 )
