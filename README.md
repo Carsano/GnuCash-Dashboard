@@ -69,6 +69,15 @@ GnuCash (PostgreSQL) -> Transformation job -> Analytics schema/views -> Streamli
 - Offer one page per theme: `Overview`, `Cashflow`, `Budgets`, `Alerts`.
 - Add a control panel (period selection, accounts, currency).
 
+## Switching Backends
+
+Use the SQLAlchemy backend by default (`GNUCASH_BACKEND=sqlalchemy`). To prepare a piecash migration:
+
+- set `GNUCASH_BACKEND=piecash`
+- set `PIECASH_FILE=/absolute/path/to/book.gnucash`
+
+The Streamlit front end stays unchanged; only the backend selector changes.
+
 ## Immediate Roadmap
 
 - [ ] Add ETL dependencies (`sqlalchemy`, `asyncpg`, `pandas`).

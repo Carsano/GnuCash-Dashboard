@@ -1,6 +1,7 @@
 """Infrastructure adapters for synchronizing accounts via SQLAlchemy."""
 
 from dataclasses import asdict
+from pathlib import Path
 
 from sqlalchemy import text
 
@@ -10,6 +11,12 @@ from src.application.ports.accounts_sync import (
     AccountsSourcePort,
 )
 from src.application.ports.database import DatabaseEnginePort
+from src.infrastructure.logging.logger import get_app_logger
+
+try:  # pragma: no cover - optional dependency
+    import piecash  # noqa: F401
+except ImportError:  # pragma: no cover - optional dependency
+    piecash = None
 
 
 SELECT_ACCOUNTS_SQL = text(
@@ -119,9 +126,39 @@ class SqlAlchemyAccountsDestination(AccountsDestinationPort):
         return len(payload)
 
 
+class PieCashAccountsSource(AccountsSourcePort):
+    """Account source backed by a piecash book."""
+
+    def __init__(self, book_path: Path, logger=None) -> None:
+        """Initialize the source adapter.
+
+        Args:
+            book_path: Path to the piecash book file.
+            logger: Optional logger compatible with logging.Logger-like API.
+        """
+        if piecash is None:  # pragma: no cover - optional dependency
+            raise RuntimeError(
+                "piecash is not installed; install it to use the piecash backend"
+            )
+        self._book_path = book_path
+        self._logger = logger or get_app_logger()
+
+    def fetch_accounts(self) -> list[AccountRecord]:
+        """Return account records from the piecash book.
+
+        Returns:
+            list[AccountRecord]: Accounts fetched from the piecash book.
+        """
+        raise NotImplementedError(
+            "PieCashAccountsSource is a placeholder; "
+            "implement fetch_accounts before enabling the backend."
+        )
+
+
 __all__ = [
     "SqlAlchemyAccountsSource",
     "SqlAlchemyAccountsDestination",
+    "PieCashAccountsSource",
     "SELECT_ACCOUNTS_SQL",
     "INSERT_ACCOUNTS_SQL",
     "TRUNCATE_ACCOUNTS_SQL",
