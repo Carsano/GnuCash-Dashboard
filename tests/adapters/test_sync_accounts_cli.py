@@ -9,7 +9,6 @@ from src.adapters import sync_accounts_cli
 def test_main_runs_use_case_and_prints_result(monkeypatch, capsys):
     """The CLI should instantiate the use case and print the summary."""
     fake_logger = MagicMock()
-    dummy_adapter = object()
     dummy_source = object()
     dummy_destination = object()
     fake_use_case = MagicMock()
@@ -22,26 +21,13 @@ def test_main_runs_use_case_and_prints_result(monkeypatch, capsys):
     )
     monkeypatch.setattr(
         sync_accounts_cli,
-        "SqlAlchemyDatabaseEngineAdapter",
-        lambda: dummy_adapter,
-    )
-    def _fake_source(db_port):
-        assert db_port is dummy_adapter
-        return dummy_source
-
-    def _fake_destination(db_port):
-        assert db_port is dummy_adapter
-        return dummy_destination
-
-    monkeypatch.setattr(
-        sync_accounts_cli,
-        "SqlAlchemyAccountsSource",
-        _fake_source,
+        "build_accounts_source",
+        lambda: dummy_source,
     )
     monkeypatch.setattr(
         sync_accounts_cli,
-        "SqlAlchemyAccountsDestination",
-        _fake_destination,
+        "build_accounts_destination",
+        lambda: dummy_destination,
     )
 
     def _fake_use_case(source_port, destination_port, logger):

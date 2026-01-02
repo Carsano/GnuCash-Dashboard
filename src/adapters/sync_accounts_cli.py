@@ -6,20 +6,18 @@ sync job.
 """
 
 from src.application.use_cases.sync_accounts import SyncAccountsUseCase
-from src.infrastructure.accounts_sync import (
-    SqlAlchemyAccountsDestination,
-    SqlAlchemyAccountsSource,
+from src.infrastructure.container import (
+    build_accounts_destination,
+    build_accounts_source,
 )
-from src.infrastructure.db import SqlAlchemyDatabaseEngineAdapter
 from src.infrastructure.logging.logger import get_app_logger
 
 
 def main() -> None:
     """Run the accounts synchronization use case."""
     logger = get_app_logger()
-    db_adapter = SqlAlchemyDatabaseEngineAdapter()
-    source = SqlAlchemyAccountsSource(db_adapter)
-    destination = SqlAlchemyAccountsDestination(db_adapter)
+    source = build_accounts_source()
+    destination = build_accounts_destination()
     use_case = SyncAccountsUseCase(
         source_port=source,
         destination_port=destination,

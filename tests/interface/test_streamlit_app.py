@@ -18,7 +18,7 @@ def test_fetch_accounts_invokes_use_case(monkeypatch):
 
     monkeypatch.setattr(
         app,
-        "SqlAlchemyDatabaseEngineAdapter",
+        "build_database_adapter",
         lambda: "adapter",
     )
     monkeypatch.setattr(
@@ -58,12 +58,12 @@ def test_fetch_net_worth_summary_invokes_use_case(monkeypatch):
 
     monkeypatch.setattr(
         app,
-        "SqlAlchemyDatabaseEngineAdapter",
+        "build_database_adapter",
         lambda: "adapter",
     )
     monkeypatch.setattr(
         app,
-        "create_gnucash_repository",
+        "build_gnucash_repository",
         lambda _adapter: "repository",
     )
     monkeypatch.setattr(
