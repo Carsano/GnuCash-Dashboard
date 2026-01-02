@@ -12,18 +12,18 @@ from src.application.ports.gnucash_repository import (
     PriceRow,
 )
 from src.infrastructure.logging.logger import get_app_logger
-from src.infrastructure.piecash_compat import load_piecash
+from src.infrastructure.piecash_compat import load_piecash, open_piecash_book
 from src.utils.decimal_utils import coerce_decimal
 
 
 class PieCashGnuCashRepository(GnuCashRepositoryPort):
     """Repository for PieCash-based GnuCash access."""
 
-    def __init__(self, book_path: Path, logger=None) -> None:
+    def __init__(self, book_path: Path | str, logger=None) -> None:
         """Initialize the repository.
 
         Args:
-            book_path: Path to the GnuCash book supported by piecash.
+            book_path: Path or URI to the GnuCash book supported by piecash.
             logger: Optional logger compatible with logging.Logger-like API.
         """
         try:
@@ -37,8 +37,9 @@ class PieCashGnuCashRepository(GnuCashRepositoryPort):
 
     @contextmanager
     def _open_book(self):
-        book = self._piecash.open_book(
-            str(self._book_path),
+        book = open_piecash_book(
+            self._piecash,
+            self._book_path,
             readonly=True,
             open_if_lock=True,
             check_exists=False,

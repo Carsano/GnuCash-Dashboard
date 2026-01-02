@@ -44,7 +44,9 @@ def build_accounts_source(
     settings = GnuCashSettings.from_env()
     if settings.backend == "piecash":
         if settings.piecash_file is None:
-            raise RuntimeError("PieCash backend requires a PIECASH_FILE path.")
+            raise RuntimeError(
+                "PieCash backend requires a PIECASH_FILE value."
+            )
         return PieCashAccountsSource(
             settings.piecash_file,
             logger=get_app_logger(),

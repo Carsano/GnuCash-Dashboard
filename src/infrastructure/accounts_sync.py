@@ -12,7 +12,7 @@ from src.application.ports.accounts_sync import (
 )
 from src.application.ports.database import DatabaseEnginePort
 from src.infrastructure.logging.logger import get_app_logger
-from src.infrastructure.piecash_compat import load_piecash
+from src.infrastructure.piecash_compat import load_piecash, open_piecash_book
 
 
 SELECT_ACCOUNTS_SQL = text(
@@ -125,11 +125,11 @@ class SqlAlchemyAccountsDestination(AccountsDestinationPort):
 class PieCashAccountsSource(AccountsSourcePort):
     """Account source backed by a piecash book."""
 
-    def __init__(self, book_path: Path, logger=None) -> None:
+    def __init__(self, book_path: Path | str, logger=None) -> None:
         """Initialize the source adapter.
 
         Args:
-            book_path: Path to the piecash book file.
+            book_path: Path or URI to the piecash book.
             logger: Optional logger compatible with logging.Logger-like API.
         """
         try:
@@ -147,8 +147,9 @@ class PieCashAccountsSource(AccountsSourcePort):
         Returns:
             list[AccountRecord]: Accounts fetched from the piecash book.
         """
-        book = self._piecash.open_book(
-            str(self._book_path),
+        book = open_piecash_book(
+            self._piecash,
+            self._book_path,
             readonly=True,
             open_if_lock=True,
             check_exists=False,

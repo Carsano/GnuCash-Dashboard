@@ -50,7 +50,8 @@ GnuCash (PostgreSQL) -> Transformation job -> Analytics schema/views -> Streamli
    - create a read-only role pointing to the existing GnuCash database;
    - create a separate schema/database (`finances_analytics`) for derived tables;
    - set environment variables `GNUCASH_DB_URL` and `ANALYTICS_DB_URL` (can be the same DB with two schemas).
-   - optional: set `GNUCASH_BACKEND=piecash` and `PIECASH_FILE=/path/to/book.gnucash` when switching to piecash (adapter TODO).
+   - optional: set `GNUCASH_BACKEND=piecash` and `PIECASH_FILE=/path/to/book.gnucash` to use piecash from a local file.
+   - optional: for piecash + PostgreSQL, set `PIECASH_FILE=postgresql://user:pass@host/dbname` (requires `piecash[postgres]`).
 4. **Schedule synchronization**:
    - run `uv run python sync_gnucash.py` via cron/systemd or GitHub Actions to refresh analytics tables.
 
@@ -80,13 +81,15 @@ Use the SQLAlchemy backend by default (`GNUCASH_BACKEND=sqlalchemy`). To prepare
 
 - set `GNUCASH_BACKEND=piecash`
 - set `PIECASH_FILE=/absolute/path/to/book.gnucash`
+- or use `PIECASH_FILE=postgresql://user:pass@host/dbname` for a Postgres-backed book
 
 The Streamlit front end stays unchanged; only the backend selector changes.
 
 ## Migration Checklist
 
 - Install `piecash` and ensure the GnuCash book is readable locally.
-- Set `GNUCASH_BACKEND=piecash` and `PIECASH_FILE` to the book path.
+- For Postgres-backed books, install `piecash[postgres]`.
+- Set `GNUCASH_BACKEND=piecash` and `PIECASH_FILE` to the book path or URI.
 - Run the contract tests (`uv run pytest tests/application/test_gnucash_repository_contracts.py`).
 - Compare logged source summaries (balances/prices) between SQL and piecash runs.
 - Validate dashboards and sync outputs on a staging dataset before switching.

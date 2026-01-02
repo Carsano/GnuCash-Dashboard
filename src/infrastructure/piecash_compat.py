@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import inspect
 import warnings
+from pathlib import Path
+from urllib.parse import urlparse
 
 from sqlalchemy.exc import SAWarning
 
@@ -49,4 +51,32 @@ def load_piecash():
     return piecash
 
 
-__all__ = ["load_piecash"]
+def open_piecash_book(
+    piecash,
+    book_path: Path | str,
+    *,
+    readonly: bool = True,
+    open_if_lock: bool = True,
+    check_exists: bool = False,
+):
+    """Open a piecash book from a filesystem path or URI."""
+    uri: str | None = None
+    sqlite_file: str | None = None
+    if isinstance(book_path, Path):
+        sqlite_file = str(book_path)
+    else:
+        parsed = urlparse(book_path)
+        if parsed.scheme and parsed.scheme != "file":
+            uri = book_path
+        else:
+            sqlite_file = str(Path(book_path).expanduser().resolve())
+    return piecash.open_book(
+        sqlite_file=sqlite_file,
+        uri_conn=uri,
+        readonly=readonly,
+        open_if_lock=open_if_lock,
+        check_exists=check_exists,
+    )
+
+
+__all__ = ["load_piecash", "open_piecash_book"]

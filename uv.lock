@@ -168,7 +168,7 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "dotenv" },
-    { name = "piecash" },
+    { name = "piecash", extra = ["postgres"] },
     { name = "psycopg", extra = ["binary", "pool"] },
     { name = "psycopg2" },
     { name = "pytest" },
@@ -181,7 +181,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "dotenv", specifier = ">=0.9.9" },
-    { name = "piecash", specifier = ">=1.1.2" },
+    { name = "piecash", extras = ["postgres"], specifier = ">=1.1.2" },
     { name = "psycopg", extras = ["binary", "pool"], specifier = ">=3.1.0" },
     { name = "psycopg2", specifier = ">=2.9.11" },
     { name = "pytest", specifier = ">=8.3.2" },
@@ -360,6 +360,11 @@ dependencies = [
     { name = "tzlocal" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/26/77/7dd97655c372514aac443b1b37426751a4a113b3f891b1a99798b71b914a/piecash-1.1.2.tar.gz", hash = "sha256:a32f96bcde9ab06e0537b4fd9b2301c80986b6efe842d00d88b28f9303bbbcf8", size = 754484, upload-time = "2020-10-24T18:19:51.13Z" }
+
+[package.optional-dependencies]
+postgres = [
+    { name = "psycopg2" },
+]
 
 [[package]]
 name = "pillow"

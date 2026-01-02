@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import os
 from pathlib import Path
 from typing import Optional
+from urllib.parse import unquote, urlparse
 
 from src.infrastructure.logging.logger import get_app_logger
 from src.utils.utils import get_project_root
@@ -15,11 +16,11 @@ class GnuCashSettings:
 
     Attributes:
         backend: Backend identifier (sqlalchemy or piecash).
-        piecash_file: Optional path to the piecash book file.
+        piecash_file: Optional path or URI to the piecash book.
     """
 
     backend: str = "sqlalchemy"
-    piecash_file: Optional[Path] = None
+    piecash_file: Optional[Path | str] = None
 
     @classmethod
     def from_env(cls) -> "GnuCashSettings":
@@ -42,16 +43,21 @@ class GnuCashSettings:
     def _normalize_path(
         raw_path: str,
         logger,
-    ) -> Path:
-        """Normalize the piecash file path.
+    ) -> Path | str:
+        """Normalize the piecash file path or URI.
 
         Args:
             raw_path: Raw file path string.
             logger: Logger used for warnings.
 
         Returns:
-            Path: Normalized path.
+            Path | str: Normalized filesystem path or URI string.
         """
+        parsed = urlparse(raw_path)
+        if parsed.scheme and parsed.scheme != "file":
+            return raw_path
+        if parsed.scheme == "file":
+            raw_path = unquote(parsed.path)
         path = Path(raw_path).expanduser().resolve()
         if not path.exists():
             logger.warning(f"PieCash file does not exist at {path}")

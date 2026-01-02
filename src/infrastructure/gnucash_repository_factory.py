@@ -36,7 +36,9 @@ def create_gnucash_repository(
     if selected_backend == "piecash":
         path = resolved_settings.piecash_file
         if path is None:
-            raise RuntimeError("PieCash backend requires a PIECASH_FILE path.")
+            raise RuntimeError(
+                "PieCash backend requires a PIECASH_FILE value."
+            )
         resolved_logger.info(f"Using piecash book: {path}")
         return PieCashGnuCashRepository(path, logger=resolved_logger)
 
