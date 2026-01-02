@@ -286,6 +286,7 @@ def _build_asset_category_chart(
     show_legend: bool,
     legend_columns: int,
     palette: Sequence[str] | None,
+    attach_selection: bool = True,
 ) -> alt.Chart:
     """Build a horizontal bar chart of asset amounts by category.
 
@@ -304,6 +305,7 @@ def _build_asset_category_chart(
         show_legend: Whether to display the legend.
         legend_columns: Column count when legend is shown.
         palette: Optional color palette override.
+        attach_selection: Whether to register the selection on the chart.
 
     Returns:
         Altair chart object ready to render.
@@ -439,8 +441,10 @@ def _build_asset_category_chart(
             offset=8,
         ),
     )
-    if selection is not None and (
-        enable_selection or filter_selection or dim_by_selection
+    if (
+        attach_selection
+        and selection is not None
+        and (enable_selection or filter_selection or dim_by_selection)
     ):
         chart = chart.add_params(selection)
     return chart
@@ -625,6 +629,7 @@ def main() -> None:
             show_legend=False,
             legend_columns=3,
             palette=None,
+            attach_selection=False,
         )
         combined = alt.hconcat(left_chart, right_chart, spacing=16).properties(
             title=alt.TitleParams(text="")

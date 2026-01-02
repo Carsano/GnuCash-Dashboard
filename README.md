@@ -58,6 +58,7 @@ GnuCash (PostgreSQL) -> Transformation job -> Analytics schema/views -> Streamli
 ## Usage
 
 - Sync accounts: `uv run python -m src.adapters.sync_accounts_cli`
+- Sync GnuCash tables into analytics: `uv run python -m src.adapters.sync_gnucash_analytics_cli`
 - Compare SQL vs piecash: `uv run python -m src.adapters.compare_backends_cli`
 
 ## Shaping GnuCash Data
@@ -77,7 +78,12 @@ GnuCash (PostgreSQL) -> Transformation job -> Analytics schema/views -> Streamli
 
 ## Switching Backends
 
-Use the SQLAlchemy backend by default (`GNUCASH_BACKEND=sqlalchemy`). To prepare a piecash migration:
+Use the SQLAlchemy backend by default (`GNUCASH_BACKEND=sqlalchemy`). To switch the dashboard to analytics:
+
+- run `uv run python -m src.adapters.sync_gnucash_analytics_cli`
+- set `GNUCASH_BACKEND=analytics` (reads from analytics tables)
+
+To prepare a piecash migration:
 
 - set `GNUCASH_BACKEND=piecash`
 - set `PIECASH_FILE=/absolute/path/to/book.gnucash`

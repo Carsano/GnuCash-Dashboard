@@ -15,7 +15,7 @@ class GnuCashSettings:
     """Settings for selecting the GnuCash backend.
 
     Attributes:
-        backend: Backend identifier (sqlalchemy or piecash).
+        backend: Backend identifier (sqlalchemy, analytics, or piecash).
         piecash_file: Optional path or URI to the piecash book.
     """
 

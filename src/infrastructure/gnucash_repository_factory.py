@@ -2,6 +2,9 @@
 
 from src.application.ports.database import DatabaseEnginePort
 from src.application.ports.gnucash_repository import GnuCashRepositoryPort
+from src.infrastructure.analytics_gnucash_repository import (
+    AnalyticsGnuCashRepository,
+)
 from src.infrastructure.gnucash_repository import SqlAlchemyGnuCashRepository
 from src.infrastructure.logging.logger import get_app_logger
 from src.infrastructure.piecash_repository import PieCashGnuCashRepository
@@ -33,6 +36,9 @@ def create_gnucash_repository(
     if selected_backend == "sqlalchemy":
         return SqlAlchemyGnuCashRepository(db_port)
 
+    if selected_backend == "analytics":
+        return AnalyticsGnuCashRepository(db_port)
+
     if selected_backend == "piecash":
         path = resolved_settings.piecash_file
         if path is None:
@@ -44,7 +50,7 @@ def create_gnucash_repository(
 
     raise ValueError(
         "Unsupported GnuCash backend: "
-        f"{selected_backend}. Expected sqlalchemy or piecash."
+        f"{selected_backend}. Expected sqlalchemy, analytics, or piecash."
     )
 
 

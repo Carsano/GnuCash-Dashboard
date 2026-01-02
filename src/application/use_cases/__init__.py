@@ -12,6 +12,10 @@ from .get_asset_category_breakdown import (
     AssetCategoryAmount,
 )
 from .compare_backends import CompareBackendsUseCase, BackendComparison
+from .sync_gnucash_analytics import (
+    SyncGnuCashAnalyticsUseCase,
+    SyncGnuCashAnalyticsResult,
+)
 
 __all__ = [
     "SyncAccountsUseCase",
@@ -25,4 +29,6 @@ __all__ = [
     "AssetCategoryAmount",
     "CompareBackendsUseCase",
     "BackendComparison",
+    "SyncGnuCashAnalyticsUseCase",
+    "SyncGnuCashAnalyticsResult",
 ]

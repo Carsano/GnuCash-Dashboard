@@ -4,6 +4,9 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 from src.infrastructure import gnucash_repository_factory as factory
+from src.infrastructure.analytics_gnucash_repository import (
+    AnalyticsGnuCashRepository,
+)
 from src.infrastructure.gnucash_repository import SqlAlchemyGnuCashRepository
 from src.infrastructure.settings import GnuCashSettings
 
@@ -34,3 +37,16 @@ def test_factory_uses_piecash_backend(monkeypatch, tmp_path: Path) -> None:
     )
 
     assert repository is dummy_repo
+
+
+def test_factory_uses_analytics_backend() -> None:
+    """Factory should return analytics repository when configured."""
+    db_port = MagicMock()
+    settings = GnuCashSettings(backend="analytics", piecash_file=None)
+
+    repository = factory.create_gnucash_repository(
+        db_port,
+        settings=settings,
+    )
+
+    assert isinstance(repository, AnalyticsGnuCashRepository)
