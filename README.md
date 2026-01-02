@@ -54,6 +54,11 @@ GnuCash (PostgreSQL) -> Transformation job -> Analytics schema/views -> Streamli
 4. **Schedule synchronization**:
    - run `uv run python sync_gnucash.py` via cron/systemd or GitHub Actions to refresh analytics tables.
 
+## Usage
+
+- Sync accounts: `uv run python -m src.adapters.sync_accounts_cli`
+- Compare SQL vs piecash: `uv run python -m src.adapters.compare_backends_cli`
+
 ## Shaping GnuCash Data
 
 1. Connect directly to the GnuCash PostgreSQL backend using `sqlalchemy.create_engine(GNUCASH_DB_URL)`.

@@ -11,6 +11,7 @@ from .get_asset_category_breakdown import (
     AssetCategoryBreakdown,
     AssetCategoryAmount,
 )
+from .compare_backends import CompareBackendsUseCase, BackendComparison
 
 __all__ = [
     "SyncAccountsUseCase",
@@ -22,4 +23,6 @@ __all__ = [
     "GetAssetCategoryBreakdownUseCase",
     "AssetCategoryBreakdown",
     "AssetCategoryAmount",
+    "CompareBackendsUseCase",
+    "BackendComparison",
 ]
