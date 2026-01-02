@@ -78,6 +78,14 @@ Use the SQLAlchemy backend by default (`GNUCASH_BACKEND=sqlalchemy`). To prepare
 
 The Streamlit front end stays unchanged; only the backend selector changes.
 
+## Migration Checklist
+
+- Install `piecash` and ensure the GnuCash book is readable locally.
+- Set `GNUCASH_BACKEND=piecash` and `PIECASH_FILE` to the book path.
+- Run the contract tests (`uv run pytest tests/application/test_gnucash_repository_contracts.py`).
+- Compare logged source summaries (balances/prices) between SQL and piecash runs.
+- Validate dashboards and sync outputs on a staging dataset before switching.
+
 ## Immediate Roadmap
 
 - [ ] Add ETL dependencies (`sqlalchemy`, `asyncpg`, `pandas`).

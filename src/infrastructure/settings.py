@@ -52,7 +52,7 @@ class GnuCashSettings:
         """
         path = Path(raw_path).expanduser().resolve()
         if not path.exists():
-            logger.warning("PieCash file does not exist at %s", path)
+            logger.warning(f"PieCash file does not exist at {path}")
         return path
 
 

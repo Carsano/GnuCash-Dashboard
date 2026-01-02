@@ -26,7 +26,9 @@ def create_gnucash_repository(
     resolved_logger = logger or get_app_logger()
     resolved_settings = settings or GnuCashSettings.from_env()
     selected_backend = resolved_settings.backend.strip().lower()
-    resolved_logger.info("Using GnuCash backend: %s", selected_backend)
+    resolved_logger.info(
+        f"Using GnuCash backend: {selected_backend}"
+    )
 
     if selected_backend == "sqlalchemy":
         return SqlAlchemyGnuCashRepository(db_port)
@@ -35,7 +37,7 @@ def create_gnucash_repository(
         path = resolved_settings.piecash_file
         if path is None:
             raise RuntimeError("PieCash backend requires a PIECASH_FILE path.")
-        resolved_logger.info("Using piecash book: %s", path)
+        resolved_logger.info(f"Using piecash book: {path}")
         return PieCashGnuCashRepository(path, logger=resolved_logger)
 
     raise ValueError(

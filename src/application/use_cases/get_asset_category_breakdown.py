@@ -12,6 +12,11 @@ from src.application.use_cases.fx_utils import (
     coerce_decimal,
     convert_balance,
 )
+from src.application.use_cases.gnucash_invariants import (
+    normalize_mnemonic,
+    normalize_namespace,
+    validate_balance_sign,
+)
 from src.infrastructure.logging.logger import get_app_logger
 
 
@@ -85,6 +90,10 @@ class GetAssetCategoryBreakdownUseCase:
             currency_guid,
             end_date,
         )
+        self._logger.info(
+            f"Fetched {len(rows)} category balances and "
+            f"{len(price_rows)} prices for breakdown"
+        )
         prices = build_price_map(price_rows, self._logger)
 
         totals: dict[tuple[str | None, str], Decimal] = {}
@@ -101,11 +110,18 @@ class GetAssetCategoryBreakdownUseCase:
             if not category:
                 continue
             balance = coerce_decimal(row.balance)
+            validate_balance_sign(
+                account_type,
+                balance,
+                self._asset_types,
+                (),
+                self._logger,
+            )
             converted = convert_balance(
                 balance,
                 row.commodity_guid,
-                row.mnemonic,
-                row.namespace,
+                normalize_mnemonic(row.mnemonic),
+                normalize_namespace(row.namespace),
                 currency_guid,
                 target_currency,
                 prices,
