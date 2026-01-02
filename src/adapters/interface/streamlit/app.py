@@ -4,8 +4,8 @@ from collections.abc import Sequence
 from datetime import date, timedelta
 from decimal import Decimal
 
-import streamlit as st
 import altair as alt
+import streamlit as st
 
 from src.application.use_cases.get_accounts import (
     AccountDTO,
@@ -23,6 +23,7 @@ from src.infrastructure.container import (
     build_database_adapter,
     build_gnucash_repository,
 )
+from src.infrastructure.logging.logger import get_app_logger
 
 
 def _fetch_accounts() -> Sequence[AccountDTO]:
@@ -112,6 +113,24 @@ def _format_delta_with_percent(
     percent = (delta / baseline) * Decimal("100")
     sign = "+" if percent >= 0 else ""
     return f"{_format_delta(delta)} ({sign}{percent:.2f}%)"
+
+
+def _check_altair_dependencies() -> tuple[bool, str | None]:
+    """Check that Altair dependencies are available and healthy.
+
+    Returns:
+        Tuple with a boolean status and an optional error message.
+    """
+    try:
+        import numpy as np
+        import pandas as pd
+    except Exception as exc:
+        return False, f"{type(exc).__name__}: {exc}"
+    if not hasattr(np, "ndarray"):
+        return False, "numpy import incomplete: missing ndarray"
+    if not hasattr(pd, "Timestamp"):
+        return False, "pandas import incomplete: missing Timestamp"
+    return True, None
 
 
 def _get_period_start(
@@ -556,6 +575,18 @@ def main() -> None:
             level=2,
             schema_version=2,
         )
+        deps_ok, deps_error = _check_altair_dependencies()
+        if not deps_ok:
+            logger = get_app_logger()
+            logger.warning(
+                "Altair dependency check failed: %s",
+                deps_error or "unknown error",
+            )
+            st.error(
+                "Charts are unavailable because NumPy/Pandas failed to "
+                "import. Reinstall dependencies and restart Streamlit."
+            )
+            return
         category_selection = alt.selection_point(
             name="category_selection",
             fields=["parent_label"],
