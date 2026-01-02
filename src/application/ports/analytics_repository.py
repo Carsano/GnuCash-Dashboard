@@ -4,6 +4,7 @@ from datetime import date
 from typing import Protocol
 
 from src.domain.models import (
+    AccountBalanceRow,
     AssetCategoryBalanceRow,
     NetWorthBalanceRow,
     PriceRow,
@@ -30,6 +31,12 @@ class AnalyticsRepositoryPort(Protocol):
         actif_root_name: str,
     ) -> list[AssetCategoryBalanceRow]:
         """Return balances grouped by asset category."""
+
+    def fetch_account_balances(
+        self,
+        end_date: date | None,
+    ) -> list[AccountBalanceRow]:
+        """Return balances grouped by account."""
 
     def fetch_latest_prices(
         self,

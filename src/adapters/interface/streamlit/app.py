@@ -11,6 +11,10 @@ from src.application.use_cases.get_accounts import (
     AccountDTO,
     GetAccountsUseCase,
 )
+from src.application.use_cases.get_account_balances import (
+    AccountBalanceDTO,
+    GetAccountBalancesUseCase,
+)
 from src.application.use_cases.get_net_worth_summary import (
     GetNetWorthSummaryUseCase,
     NetWorthSummary,
@@ -62,6 +66,27 @@ def _load_net_worth_summary(
     return _fetch_net_worth_summary(start_date, end_date)
 
 
+def _fetch_account_balances(
+    end_date: date | None,
+    target_currency: str,
+) -> Sequence[AccountBalanceDTO]:
+    """Fetch account balances using the analytics database."""
+    repository = build_analytics_repository()
+    use_case = GetAccountBalancesUseCase(gnucash_repository=repository)
+    return use_case.execute(end_date=end_date, target_currency=target_currency)
+
+
+@st.cache_data(show_spinner=False)
+def _load_account_balances(
+    end_date: date | None,
+    target_currency: str,
+    schema_version: int = 1,
+) -> Sequence[AccountBalanceDTO]:
+    """Cached wrapper around _fetch_account_balances."""
+    _ = schema_version
+    return _fetch_account_balances(end_date, target_currency)
+
+
 def _fetch_asset_category_breakdown(
     end_date: date | None,
     level: int,
@@ -93,6 +118,16 @@ def _format_currency(value: Decimal, currency_code: str) -> str:
     """Format currency values for display."""
     symbol = "€" if currency_code == "EUR" else currency_code
     return f"{value:,.2f} {symbol}"
+
+
+def _format_optional_currency(
+    value: Decimal | None,
+    currency_code: str,
+) -> str:
+    """Format currency values while handling missing amounts."""
+    if value is None:
+        return "—"
+    return _format_currency(value, currency_code)
 
 
 def _format_delta(value: Decimal) -> str:
@@ -214,6 +249,64 @@ def _render_accounts(accounts: Sequence[AccountDTO]) -> None:
         for acc in filtered
     ]
     st.dataframe(data, width="stretch", hide_index=True, height=420)
+
+
+def _render_account_tree(
+    accounts: Sequence[AccountBalanceDTO],
+    currency_code: str,
+) -> None:
+    """Render account balances in a tree with expandable nodes."""
+    st.subheader("Account Tree")
+    if not accounts:
+        st.info("No account balances available yet.")
+        return
+    accounts_by_guid = {account.guid: account for account in accounts}
+    children_by_parent: dict[str | None, list[AccountBalanceDTO]] = {}
+    for account in accounts:
+        children_by_parent.setdefault(account.parent_guid, []).append(account)
+    for children in children_by_parent.values():
+        children.sort(key=lambda item: (item.name.lower(), item.guid))
+
+    roots = list(children_by_parent.get(None, []))
+    orphaned = [
+        account
+        for account in accounts
+        if account.parent_guid not in accounts_by_guid
+        and account.parent_guid is not None
+    ]
+    roots.extend(orphaned)
+    roots.sort(key=lambda item: (item.name.lower(), item.guid))
+
+    def compute_total(node: AccountBalanceDTO) -> Decimal:
+        total = node.balance or Decimal("0")
+        for child in children_by_parent.get(node.guid, []):
+            total += compute_total(child)
+        return total
+
+    def render_node(node: AccountBalanceDTO, depth: int) -> None:
+        total = compute_total(node)
+        label = (
+            f"{node.name} • "
+            f"{_format_optional_currency(total, currency_code)}"
+        )
+        children = children_by_parent.get(node.guid, [])
+        if not children:
+            st.write(
+                f"{'  ' * depth}{node.name} — "
+                f"{_format_optional_currency(node.balance, currency_code)}"
+            )
+            return
+        with st.expander(label, expanded=False):
+            if node.balance is not None:
+                st.caption(
+                    "Own balance: "
+                    f"{_format_optional_currency(node.balance, currency_code)}"
+                )
+            for child in children:
+                render_node(child, depth + 1)
+
+    for root in roots:
+        render_node(root, 0)
 
 
 def _render_asset_category_chart(
@@ -637,6 +730,12 @@ def main() -> None:
             labelColor="#e7ecf3"
         )
         st.altair_chart(combined, width="stretch")
+        account_balances = _load_account_balances(
+            end_date=end_date,
+            target_currency=currency_code,
+            schema_version=2,
+        )
+        _render_account_tree(account_balances, currency_code)
     elif page == "Accounts":
         accounts = _load_accounts()
         st.caption(f"{len(accounts)} accounts synced "

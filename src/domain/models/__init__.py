@@ -1,6 +1,6 @@
 """Domain models package."""
 
-from .accounts import AccountDTO
+from .accounts import AccountBalanceDTO, AccountBalanceRow, AccountDTO
 from .finance import (
     AssetCategoryAmount,
     AssetCategoryBreakdown,
@@ -14,6 +14,8 @@ from .gnucash_rows import (
 
 __all__ = [
     "AccountDTO",
+    "AccountBalanceRow",
+    "AccountBalanceDTO",
     "NetWorthSummary",
     "AssetCategoryAmount",
     "AssetCategoryBreakdown",

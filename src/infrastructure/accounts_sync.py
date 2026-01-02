@@ -136,7 +136,8 @@ class PieCashAccountsSource(AccountsSourcePort):
             self._piecash = load_piecash()
         except ImportError as exc:
             raise RuntimeError(
-                "piecash is not installed; install it to use the piecash backend"
+                "piecash is not installed; "
+                "install it to use the piecash backend"
             ) from exc
         self._book_path = book_path
         self._logger = logger or get_app_logger()

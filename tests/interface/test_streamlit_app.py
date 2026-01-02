@@ -72,6 +72,51 @@ def test_fetch_net_worth_summary_invokes_use_case(monkeypatch):
     assert result == fake_summary
 
 
+def test_fetch_account_balances_invokes_use_case(monkeypatch):
+    """_fetch_account_balances should instantiate the adapter and use case."""
+    fake_balances = ["balance"]
+
+    class _FakeUseCase:
+        def __init__(self, gnucash_repository):
+            self.gnucash_repository = gnucash_repository
+
+        def execute(self, end_date=None, target_currency="EUR"):
+            return fake_balances
+
+    monkeypatch.setattr(
+        app,
+        "build_analytics_repository",
+        lambda: "repository",
+    )
+    monkeypatch.setattr(
+        app,
+        "GetAccountBalancesUseCase",
+        lambda gnucash_repository: _FakeUseCase(gnucash_repository),
+    )
+
+    result = app._fetch_account_balances(
+        end_date=None,
+        target_currency="EUR",
+    )
+
+    assert result == fake_balances
+
+
+def test_load_account_balances_uses_fetch(monkeypatch):
+    """The cached loader should delegate to _fetch_account_balances."""
+    fake_balances = ["cached"]
+    monkeypatch.setattr(
+        app,
+        "_fetch_account_balances",
+        lambda end_date, target_currency: fake_balances,
+    )
+    result = app._load_account_balances(
+        end_date=None,
+        target_currency="EUR",
+    )
+    assert result == fake_balances
+
+
 class _FakeStreamlit:
     def __init__(self) -> None:
         self.config_called = False

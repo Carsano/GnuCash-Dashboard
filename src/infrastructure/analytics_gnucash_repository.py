@@ -11,6 +11,7 @@ from src.application.ports.gnucash_repository import (
     NetWorthBalanceRow,
     PriceRow,
 )
+from src.domain.models import AccountBalanceRow
 from src.utils.decimal_utils import coerce_decimal
 
 
@@ -105,6 +106,33 @@ class AnalyticsGnuCashRepository(GnuCashRepositoryPort):
                 row.mnemonic or "",
                 row.namespace or "",
             ),
+        )
+
+    def fetch_account_balances(
+        self,
+        end_date: date | None,
+    ) -> list[AccountBalanceRow]:
+        query = self._build_account_balances_query(end_date)
+        params = self._build_date_params(None, end_date)
+        engine = self._db_port.get_analytics_engine()
+        with engine.connect() as conn:
+            rows = conn.execute(query, params).all()
+        balances = [
+            AccountBalanceRow(
+                guid=row.guid,
+                name=row.name,
+                account_type=row.account_type,
+                commodity_guid=row.commodity_guid,
+                parent_guid=row.parent_guid,
+                mnemonic=row.mnemonic,
+                namespace=row.namespace,
+                balance=coerce_decimal(row.balance),
+            )
+            for row in rows
+        ]
+        return sorted(
+            balances,
+            key=lambda row: (row.name.lower(), row.guid),
         )
 
     def fetch_latest_prices(
@@ -238,6 +266,41 @@ class AnalyticsGnuCashRepository(GnuCashRepositoryPort):
         base_sql += (
             " GROUP BY a.account_type, a.commodity_guid, c.mnemonic, "
             "c.namespace, at.top_child_name, at.second_child_name"
+        )
+        return text(base_sql)
+
+    @staticmethod
+    def _build_account_balances_query(end_date: date | None):
+        base_sql = """
+        SELECT a.guid AS guid,
+               a.name AS name,
+               a.account_type AS account_type,
+               a.parent_guid AS parent_guid,
+               a.commodity_guid AS commodity_guid,
+               c.mnemonic AS mnemonic,
+               c.namespace AS namespace,
+               COALESCE(
+                   SUM(
+                       CASE
+                           WHEN s.value_num IS NULL THEN 0
+                           WHEN c.namespace = 'CURRENCY'
+                               THEN CAST(s.value_num AS NUMERIC) / NULLIF(s.value_denom, 0)
+                           ELSE CAST(s.quantity_num AS NUMERIC) / NULLIF(s.quantity_denom, 0)
+                       END
+                   ),
+                   0
+               ) AS balance
+        FROM accounts a
+        JOIN commodities c ON c.guid = a.commodity_guid
+        LEFT JOIN splits s ON s.account_guid = a.guid
+        LEFT JOIN transactions t ON t.guid = s.tx_guid
+        WHERE 1=1
+        """
+        if end_date:
+            base_sql += " AND (t.post_date <= :end_date OR t.post_date IS NULL)"
+        base_sql += (
+            " GROUP BY a.guid, a.name, a.account_type, a.parent_guid, "
+            "a.commodity_guid, c.mnemonic, c.namespace"
         )
         return text(base_sql)
 
