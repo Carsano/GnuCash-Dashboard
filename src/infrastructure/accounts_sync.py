@@ -12,11 +12,7 @@ from src.application.ports.accounts_sync import (
 )
 from src.application.ports.database import DatabaseEnginePort
 from src.infrastructure.logging.logger import get_app_logger
-
-try:  # pragma: no cover - optional dependency
-    import piecash  # noqa: F401
-except ImportError:  # pragma: no cover - optional dependency
-    piecash = None
+from src.infrastructure.piecash_compat import load_piecash
 
 
 SELECT_ACCOUNTS_SQL = text(
@@ -136,10 +132,12 @@ class PieCashAccountsSource(AccountsSourcePort):
             book_path: Path to the piecash book file.
             logger: Optional logger compatible with logging.Logger-like API.
         """
-        if piecash is None:  # pragma: no cover - optional dependency
+        try:
+            self._piecash = load_piecash()
+        except ImportError as exc:
             raise RuntimeError(
                 "piecash is not installed; install it to use the piecash backend"
-            )
+            ) from exc
         self._book_path = book_path
         self._logger = logger or get_app_logger()
 
@@ -149,10 +147,41 @@ class PieCashAccountsSource(AccountsSourcePort):
         Returns:
             list[AccountRecord]: Accounts fetched from the piecash book.
         """
-        raise NotImplementedError(
-            "PieCashAccountsSource is a placeholder; "
-            "implement fetch_accounts before enabling the backend."
+        book = self._piecash.open_book(
+            str(self._book_path),
+            readonly=True,
+            open_if_lock=True,
+            check_exists=False,
         )
+        try:
+            accounts = []
+            for account in book.accounts:
+                account_type = getattr(account, "type", "")
+                if hasattr(account_type, "name"):
+                    account_type = str(account_type.name).upper()
+                else:
+                    account_type = str(account_type).upper()
+                commodity = getattr(account, "commodity", None)
+                accounts.append(
+                    AccountRecord(
+                        guid=account.guid,
+                        name=account.name,
+                        account_type=account_type,
+                        commodity_guid=(
+                            commodity.guid if commodity is not None else None
+                        ),
+                        parent_guid=(
+                            account.parent.guid
+                            if getattr(account, "parent", None) is not None
+                            else None
+                        ),
+                    )
+                )
+            return sorted(accounts, key=lambda row: row.guid)
+        finally:
+            close_method = getattr(book, "close", None)
+            if callable(close_method):
+                close_method()
 
 
 __all__ = [

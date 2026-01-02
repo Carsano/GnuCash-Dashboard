@@ -7,6 +7,7 @@ from src.application.ports.accounts_sync import (
 from src.application.ports.database import DatabaseEnginePort
 from src.application.ports.gnucash_repository import GnuCashRepositoryPort
 from src.infrastructure.accounts_sync import (
+    PieCashAccountsSource,
     SqlAlchemyAccountsDestination,
     SqlAlchemyAccountsSource,
 )
@@ -40,6 +41,14 @@ def build_accounts_source(
     db_port: DatabaseEnginePort | None = None,
 ) -> AccountsSourcePort:
     """Return the configured accounts source adapter."""
+    settings = GnuCashSettings.from_env()
+    if settings.backend == "piecash":
+        if settings.piecash_file is None:
+            raise RuntimeError("PieCash backend requires a PIECASH_FILE path.")
+        return PieCashAccountsSource(
+            settings.piecash_file,
+            logger=get_app_logger(),
+        )
     resolved_db = db_port or build_database_adapter()
     return SqlAlchemyAccountsSource(resolved_db)
 

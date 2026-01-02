@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Optional
 
 from src.infrastructure.logging.logger import get_app_logger
+from src.utils.utils import get_project_root
 
 
 @dataclass(frozen=True)
@@ -29,11 +30,12 @@ class GnuCashSettings:
         """
         backend = os.getenv("GNUCASH_BACKEND", "sqlalchemy").strip().lower()
         raw_piecash = os.getenv("PIECASH_FILE")
-        piecash_file = (
-            cls._normalize_path(raw_piecash, logger=get_app_logger())
-            if raw_piecash
-            else None
-        )
+        logger = get_app_logger()
+        piecash_file = None
+        if raw_piecash:
+            piecash_file = cls._normalize_path(raw_piecash, logger=logger)
+        else:
+            piecash_file = cls._default_piecash_file(logger=logger)
         return cls(backend=backend, piecash_file=piecash_file)
 
     @staticmethod
@@ -54,6 +56,29 @@ class GnuCashSettings:
         if not path.exists():
             logger.warning(f"PieCash file does not exist at {path}")
         return path
+
+    @staticmethod
+    def _default_piecash_file(logger) -> Path | None:
+        """Return a default piecash book path when available.
+
+        Args:
+            logger: Logger used for warnings.
+
+        Returns:
+            Path | None: Default path if a single book is found in data/.
+        """
+        data_dir = get_project_root() / "data"
+        if not data_dir.exists():
+            return None
+        matches = sorted(data_dir.glob("*.gnucash"))
+        if len(matches) == 1:
+            return matches[0].resolve()
+        if len(matches) > 1:
+            logger.warning(
+                "Multiple .gnucash files found in data/. "
+                "Set PIECASH_FILE to choose one."
+            )
+        return None
 
 
 __all__ = ["GnuCashSettings"]
