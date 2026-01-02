@@ -46,7 +46,7 @@ def test_main_logs_successful_checks(monkeypatch):
 
     monkeypatch.setattr(
         test_db_connection,
-        "SqlAlchemyDatabaseEngineAdapter",
+        "build_database_adapter",
         lambda: _Adapter(),
     )
     monkeypatch.setattr(
