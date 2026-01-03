@@ -950,7 +950,7 @@ def main() -> None:
                 model = st.session_state[model_key]
                 fig = st.session_state[fig_key]
             _ = model
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
         st.subheader("Détails")
         _render_cashflow_details(view)
     else:
