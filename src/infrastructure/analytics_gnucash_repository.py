@@ -174,18 +174,17 @@ class AnalyticsGnuCashRepository(GnuCashRepositoryPort):
         currency_guid: str,
         end_date: date | None,
     ) -> list[PriceRow]:
-        query = text(
-            """
+        base_sql = """
             SELECT commodity_guid, value_num, value_denom, date
             FROM prices
             WHERE currency_guid = :currency_guid
-            """
-        )
+        """
         params = {"currency_guid": currency_guid}
         if end_date:
-            query = text(query.text + " AND date <= :end_date")
+            base_sql += " AND date <= :end_date"
             params["end_date"] = end_date
-        query = text(query.text + " ORDER BY commodity_guid, date DESC")
+        base_sql += " ORDER BY commodity_guid, date DESC"
+        query = text(base_sql)
         engine = self._db_port.get_analytics_engine()
         with engine.connect() as conn:
             rows = conn.execute(query, params).all()
@@ -198,11 +197,8 @@ class AnalyticsGnuCashRepository(GnuCashRepositoryPort):
             )
             for row in rows
         ]
-        return sorted(
-            prices,
-            key=lambda row: (row.commodity_guid, row.date),
-            reverse=True,
-        )
+        # Query already orders by (commodity_guid ASC, date DESC).
+        return prices
 
     @staticmethod
     def _build_date_params(
