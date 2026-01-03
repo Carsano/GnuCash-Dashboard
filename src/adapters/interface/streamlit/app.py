@@ -35,7 +35,6 @@ from src.infrastructure.logging.logger import get_app_logger
 
 from src.adapters.interface.streamlit.sankey_cashflow import (
     SankeyState,
-    apply_click,
     build_plotly_figure,
     build_sankey_model,
 )
@@ -895,109 +894,63 @@ def main() -> None:
             key="cashflow_show_sankey",
         )
         if show_sankey:
-            state_key = "cashflow_sankey_state"
-            if state_key not in st.session_state:
-                st.session_state[state_key] = SankeyState()
-            sankey_state: SankeyState = st.session_state[state_key]
-
-            controls = st.columns([1, 1, 2])
-            with controls[0]:
-                if st.button("Reset tout", key="cashflow_sankey_reset_all"):
-                    sankey_state.reset_all()
-                    st.rerun()
-            with controls[1]:
-                if st.button(
-                    "Reset branche",
-                    key="cashflow_sankey_reset_branch",
-                    disabled=not (
-                        sankey_state.last_clicked_side
-                        and sankey_state.last_clicked_root
-                    ),
-                ):
-                    sankey_state.reset_last_branch()
-                    st.rerun()
-            with controls[2]:
-                sankey_state.allow_negative_diff = st.toggle(
-                    "Afficher le déficit si la différence est négative",
-                    value=sankey_state.allow_negative_diff,
-                    key="cashflow_sankey_allow_negative",
-                )
-            if (
-                view.summary.difference < 0
-                and not sankey_state.allow_negative_diff
-            ):
+            allow_negative_diff = st.toggle(
+                "Afficher le déficit si la différence est négative",
+                value=bool(
+                    st.session_state.get("cashflow_sankey_allow_negative", False)
+                ),
+                key="cashflow_sankey_allow_negative",
+            )
+            if view.summary.difference < 0 and not allow_negative_diff:
                 st.warning(
                     "La différence est négative sur la période, mais le nœud "
                     "« Déficit » est désactivé."
                 )
 
-            open_left = ", ".join(
-                f"{root} (niveau {depth})"
-                for root, depth in sorted(sankey_state.left_focus.items())
+            sankey_state = SankeyState(allow_negative_diff=allow_negative_diff)
+
+            desired_signature = (
+                start_date,
+                end_date,
+                sankey_state.allow_negative_diff,
             )
-            open_right = ", ".join(
-                f"{root} (niveau {depth})"
-                for root, depth in sorted(sankey_state.right_focus.items())
+            signature_key = "cashflow_sankey_signature"
+            model_key = "cashflow_sankey_model"
+            fig_key = "cashflow_sankey_fig"
+
+            last_signature = st.session_state.get(signature_key)
+            needs_refresh = last_signature != desired_signature
+            has_cached = (
+                fig_key in st.session_state and model_key in st.session_state
             )
-            if open_left or open_right:
-                st.caption(
-                    "Entrées ouvertes: "
-                    f"{open_left or '—'} · Sorties ouvertes: {open_right or '—'}"
+
+            refresh_col, hint_col = st.columns([1, 3])
+            with refresh_col:
+                refresh_clicked = st.button(
+                    "Rafraîchir Sankey",
+                    key="cashflow_sankey_refresh",
+                    type="primary" if (
+                        not has_cached or needs_refresh) else "secondary",
                 )
+            with hint_col:
+                if needs_refresh and has_cached:
+                    st.info(
+                        "Le Sankey n'est pas à jour pour ces paramètres. "
+                        "Clique « Rafraîchir Sankey » pour recalculer."
+                    )
 
-            model = build_sankey_model(view, sankey_state)
-            fig = build_plotly_figure(model)
-
-            enable_drilldown = st.toggle(
-                "Activer le drill-down au clic (peut ralentir)",
-                value=True,
-                key="cashflow_sankey_enable_drilldown",
-            )
-            if not enable_drilldown:
-                st.plotly_chart(fig, use_container_width=True)
+            if not has_cached or refresh_clicked:
+                with st.spinner("Construction du Sankey…"):
+                    model = build_sankey_model(view, sankey_state)
+                    fig = build_plotly_figure(model)
+                st.session_state[signature_key] = desired_signature
+                st.session_state[model_key] = model
+                st.session_state[fig_key] = fig
             else:
-                try:
-                    from streamlit_plotly_events import plotly_events
-                except ImportError:  # pragma: no cover
-                    st.error(
-                        "Le module 'streamlit-plotly-events' est requis pour "
-                        "le drill-down. Exécuter: uv sync"
-                    )
-                    plotly_events = None
-
-                if plotly_events is not None:
-                    events = plotly_events(
-                        fig,
-                        click_event=True,
-                        hover_event=False,
-                        select_event=False,
-                        key="cashflow_sankey_events",
-                    )
-
-                    node_index: int | None = None
-                    if events:
-                        point = events[0] or {}
-                        candidate = point.get(
-                            "pointNumber",
-                            point.get("pointIndex"),
-                        )
-                        if isinstance(candidate, int):
-                            node_index = candidate
-                        elif (
-                            isinstance(candidate, (list, tuple))
-                            and candidate
-                            and isinstance(candidate[0], int)
-                        ):
-                            node_index = candidate[0]
-
-                    if node_index is not None:
-                        changed = apply_click(
-                            state=sankey_state,
-                            model=model,
-                            node_index=node_index,
-                        )
-                        if changed:
-                            st.rerun()
+                model = st.session_state[model_key]
+                fig = st.session_state[fig_key]
+            _ = model
+            st.plotly_chart(fig, use_container_width=True)
         st.subheader("Détails")
         _render_cashflow_details(view)
     else:

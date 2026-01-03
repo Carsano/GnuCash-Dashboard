@@ -363,8 +363,8 @@ def build_plotly_figure(model: SankeyModel) -> "go.Figure":
             go.Sankey(
                 arrangement="snap",
                 node=dict(
-                    pad=18,
-                    thickness=16,
+                    pad=10,
+                    thickness=12,
                     label=model.node_labels,
                     x=node_x,
                     y=node_y,
@@ -375,12 +375,13 @@ def build_plotly_figure(model: SankeyModel) -> "go.Figure":
                     target=targets,
                     value=values,
                 ),
+                textfont=dict(size=12),
             )
         ]
     )
     fig.update_layout(
         margin=dict(l=8, r=8, t=8, b=8),
-        height=520,
+        height=680,
     )
     return fig
 

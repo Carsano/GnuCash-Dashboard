@@ -176,7 +176,6 @@ dependencies = [
     { name = "setuptools" },
     { name = "sqlalchemy" },
     { name = "streamlit" },
-    { name = "streamlit-plotly-events" },
 ]
 
 [package.optional-dependencies]
@@ -196,7 +195,6 @@ requires-dist = [
     { name = "setuptools", specifier = ">=80.9.0" },
     { name = "sqlalchemy", specifier = "<2.0" },
     { name = "streamlit", specifier = ">=1.52.1" },
-    { name = "streamlit-plotly-events" },
 ]
 provides-extras = ["piecash"]
 
@@ -741,19 +739,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/6f/ec/66ca1578587bbaaea5757a7f074d3f762fff8d782ffb4497a83c5722aa44/streamlit-1.52.1.tar.gz", hash = "sha256:b036a71866b893c97fdebaa2a2ebd21ebf2af7daea4b3abe783a57b26f55b3ca", size = 8582829, upload-time = "2025-12-05T18:55:42.006Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/d0/d4/cdafd4cc940937410f465ca7a77dd34237182c2ddece624e08db959496f8/streamlit-1.52.1-py3-none-any.whl", hash = "sha256:97fee2c3421d350fd65548e45a20f506ec1b651d78f95ecacbc0c2f9f838081c", size = 9024748, upload-time = "2025-12-05T18:55:39.713Z" },
-]
-
-[[package]]
-name = "streamlit-plotly-events"
-version = "0.0.6"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "plotly" },
-    { name = "streamlit" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/61/8c/e51c4867cc4d819f8452811199241d0edbcec73621768270ada66153f874/streamlit-plotly-events-0.0.6.tar.gz", hash = "sha256:1fe25dbf0e5d803aeb90253be04d7b395f5bcfdf3c654f96ff3c19424e7f9582", size = 4874598, upload-time = "2021-04-26T23:36:16.973Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/a9/08/51dd5c822e27410f6452c3cfe61f7163fdeb40f4d285f2da6c2b9f88584d/streamlit_plotly_events-0.0.6-py3-none-any.whl", hash = "sha256:e63fbe3c6a0746fdfce20060fc45ba5cd97805505c332b27372dcbd02c2ede29", size = 14802161, upload-time = "2021-04-26T23:36:09.194Z" },
 ]
 
 [[package]]
