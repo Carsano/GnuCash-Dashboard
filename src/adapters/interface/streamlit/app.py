@@ -220,23 +220,47 @@ def _get_period_start(
     return None
 
 
-def _get_date_inputs(today: date) -> tuple[date, date]:
-    """Return start/end dates chosen in the dashboard."""
-    start_col, end_col = st.columns(2)
-    with start_col:
-        start_date = st.date_input(
-            "Start date",
-            value=date(today.year, 1, 1),
-            max_value=today,
-        )
-    with end_col:
-        end_date = st.date_input(
-            "End date",
-            value=today,
-            max_value=today,
-        )
+def _get_date_inputs(today: date, *, key_prefix: str) -> tuple[date, date]:
+    """Return start/end dates chosen in the dashboard.
+
+    Args:
+        today: Reference date used for max values and defaults.
+        key_prefix: Prefix used to keep widget state isolated per page.
+
+    Returns:
+        Tuple of (start_date, end_date).
+    """
+    start_key = f"{key_prefix}_start_date"
+    end_key = f"{key_prefix}_end_date"
+    form_key = f"{key_prefix}_date_form"
+
+    if start_key not in st.session_state:
+        st.session_state[start_key] = date(today.year, 1, 1)
+    if end_key not in st.session_state:
+        st.session_state[end_key] = today
+
+    with st.form(form_key, clear_on_submit=False):
+        start_col, end_col = st.columns(2)
+        with start_col:
+            st.date_input(
+                "Start date",
+                key=start_key,
+                max_value=today,
+            )
+        with end_col:
+            st.date_input(
+                "End date",
+                key=end_key,
+                max_value=today,
+            )
+        st.form_submit_button("Appliquer")
+
+    start_date: date = st.session_state[start_key]
+    end_date: date = st.session_state[end_key]
     if start_date > end_date:
         st.warning("Start date is after end date. Swapping values.")
+        st.session_state[start_key] = end_date
+        st.session_state[end_key] = start_date
         start_date, end_date = end_date, start_date
     return start_date, end_date
 
@@ -723,7 +747,7 @@ def main() -> None:
 
     if page == "Dashboard":
         today = date.today()
-        start_date, end_date = _get_date_inputs(today)
+        start_date, end_date = _get_date_inputs(today, key_prefix="dashboard")
         baseline_end = start_date - timedelta(days=1)
 
         summary = _load_net_worth_summary(None, end_date, schema_version=2)
@@ -856,7 +880,7 @@ def main() -> None:
         _render_accounts(accounts)
     elif page == "Flux de trésorerie":
         today = date.today()
-        start_date, end_date = _get_date_inputs(today)
+        start_date, end_date = _get_date_inputs(today, key_prefix="cashflow")
         view = _load_cashflow_view(
             start_date,
             end_date,
@@ -865,95 +889,115 @@ def main() -> None:
         st.subheader("Synthèse")
         _render_cashflow_summary(view)
         st.subheader("Cashflow Sankey")
-        state_key = "cashflow_sankey_state"
-        if state_key not in st.session_state:
-            st.session_state[state_key] = SankeyState()
-        sankey_state: SankeyState = st.session_state[state_key]
-
-        controls = st.columns([1, 1, 2])
-        with controls[0]:
-            if st.button("Reset tout", key="cashflow_sankey_reset_all"):
-                sankey_state.reset_all()
-                st.rerun()
-        with controls[1]:
-            if st.button(
-                "Reset branche",
-                key="cashflow_sankey_reset_branch",
-                disabled=not (
-                    sankey_state.last_clicked_side
-                    and sankey_state.last_clicked_root
-                ),
-            ):
-                sankey_state.reset_last_branch()
-                st.rerun()
-        with controls[2]:
-            sankey_state.allow_negative_diff = st.toggle(
-                "Afficher le déficit si la différence est négative",
-                value=sankey_state.allow_negative_diff,
-                key="cashflow_sankey_allow_negative",
-            )
-        if (view.summary.difference < 0 and
-                not sankey_state.allow_negative_diff):
-            st.warning(
-                "La différence est négative sur la période, mais le nœud "
-                "« Déficit » est désactivé."
-            )
-
-        open_left = ", ".join(
-            f"{root} (niveau {depth})"
-            for root, depth in sorted(sankey_state.left_focus.items())
+        show_sankey = st.toggle(
+            "Afficher la visualisation Sankey (peut ralentir si très dense)",
+            value=False,
+            key="cashflow_show_sankey",
         )
-        open_right = ", ".join(
-            f"{root} (niveau {depth})"
-            for root, depth in sorted(sankey_state.right_focus.items())
-        )
-        if open_left or open_right:
-            st.caption(
-                "Entrées ouvertes: "
-                f"{open_left or '—'} · Sorties ouvertes: {open_right or '—'}"
-            )
+        if show_sankey:
+            state_key = "cashflow_sankey_state"
+            if state_key not in st.session_state:
+                st.session_state[state_key] = SankeyState()
+            sankey_state: SankeyState = st.session_state[state_key]
 
-        model = build_sankey_model(view, sankey_state)
-        fig = build_plotly_figure(model)
-        try:
-            from streamlit_plotly_events import plotly_events
-        except ImportError:  # pragma: no cover
-            st.error(
-                "Le module 'streamlit-plotly-events' est requis pour le "
-                "drill-down. Exécuter: uv sync"
-            )
-            plotly_events = None
-
-        if plotly_events is not None:
-            events = plotly_events(
-                fig,
-                click_event=True,
-                hover_event=False,
-                select_event=False,
-                key="cashflow_sankey_events",
-            )
-
-            node_index: int | None = None
-            if events:
-                point = events[0] or {}
-                candidate = point.get("pointNumber", point.get("pointIndex"))
-                if isinstance(candidate, int):
-                    node_index = candidate
-                elif (
-                    isinstance(candidate, (list, tuple))
-                    and candidate
-                    and isinstance(candidate[0], int)
-                ):
-                    node_index = candidate[0]
-
-            if node_index is not None:
-                changed = apply_click(
-                    state=sankey_state,
-                    model=model,
-                    node_index=node_index,
-                )
-                if changed:
+            controls = st.columns([1, 1, 2])
+            with controls[0]:
+                if st.button("Reset tout", key="cashflow_sankey_reset_all"):
+                    sankey_state.reset_all()
                     st.rerun()
+            with controls[1]:
+                if st.button(
+                    "Reset branche",
+                    key="cashflow_sankey_reset_branch",
+                    disabled=not (
+                        sankey_state.last_clicked_side
+                        and sankey_state.last_clicked_root
+                    ),
+                ):
+                    sankey_state.reset_last_branch()
+                    st.rerun()
+            with controls[2]:
+                sankey_state.allow_negative_diff = st.toggle(
+                    "Afficher le déficit si la différence est négative",
+                    value=sankey_state.allow_negative_diff,
+                    key="cashflow_sankey_allow_negative",
+                )
+            if (
+                view.summary.difference < 0
+                and not sankey_state.allow_negative_diff
+            ):
+                st.warning(
+                    "La différence est négative sur la période, mais le nœud "
+                    "« Déficit » est désactivé."
+                )
+
+            open_left = ", ".join(
+                f"{root} (niveau {depth})"
+                for root, depth in sorted(sankey_state.left_focus.items())
+            )
+            open_right = ", ".join(
+                f"{root} (niveau {depth})"
+                for root, depth in sorted(sankey_state.right_focus.items())
+            )
+            if open_left or open_right:
+                st.caption(
+                    "Entrées ouvertes: "
+                    f"{open_left or '—'} · Sorties ouvertes: {open_right or '—'}"
+                )
+
+            model = build_sankey_model(view, sankey_state)
+            fig = build_plotly_figure(model)
+
+            enable_drilldown = st.toggle(
+                "Activer le drill-down au clic (peut ralentir)",
+                value=True,
+                key="cashflow_sankey_enable_drilldown",
+            )
+            if not enable_drilldown:
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                try:
+                    from streamlit_plotly_events import plotly_events
+                except ImportError:  # pragma: no cover
+                    st.error(
+                        "Le module 'streamlit-plotly-events' est requis pour "
+                        "le drill-down. Exécuter: uv sync"
+                    )
+                    plotly_events = None
+
+                if plotly_events is not None:
+                    events = plotly_events(
+                        fig,
+                        click_event=True,
+                        hover_event=False,
+                        select_event=False,
+                        key="cashflow_sankey_events",
+                    )
+
+                    node_index: int | None = None
+                    if events:
+                        point = events[0] or {}
+                        candidate = point.get(
+                            "pointNumber",
+                            point.get("pointIndex"),
+                        )
+                        if isinstance(candidate, int):
+                            node_index = candidate
+                        elif (
+                            isinstance(candidate, (list, tuple))
+                            and candidate
+                            and isinstance(candidate[0], int)
+                        ):
+                            node_index = candidate[0]
+
+                    if node_index is not None:
+                        changed = apply_click(
+                            state=sankey_state,
+                            model=model,
+                            node_index=node_index,
+                        )
+                        if changed:
+                            st.rerun()
         st.subheader("Détails")
         _render_cashflow_details(view)
     else:
