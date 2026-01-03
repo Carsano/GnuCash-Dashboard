@@ -33,6 +33,13 @@ from src.infrastructure.container import (
 )
 from src.infrastructure.logging.logger import get_app_logger
 
+from src.adapters.interface.streamlit.sankey_cashflow import (
+    SankeyState,
+    apply_click,
+    build_plotly_figure,
+    build_sankey_model,
+)
+
 
 def _fetch_accounts() -> Sequence[AccountDTO]:
     """Fetch accounts using the analytics database."""
@@ -313,6 +320,7 @@ def _render_cashflow_details(view: CashflowView) -> None:
             )
         else:
             st.caption("Aucun flux sortant sur la période.")
+
 
 def _render_accounts(accounts: Sequence[AccountDTO]) -> None:
     """Render the accounts table with light filtering."""
@@ -856,6 +864,96 @@ def main() -> None:
         )
         st.subheader("Synthèse")
         _render_cashflow_summary(view)
+        st.subheader("Cashflow Sankey")
+        state_key = "cashflow_sankey_state"
+        if state_key not in st.session_state:
+            st.session_state[state_key] = SankeyState()
+        sankey_state: SankeyState = st.session_state[state_key]
+
+        controls = st.columns([1, 1, 2])
+        with controls[0]:
+            if st.button("Reset tout", key="cashflow_sankey_reset_all"):
+                sankey_state.reset_all()
+                st.rerun()
+        with controls[1]:
+            if st.button(
+                "Reset branche",
+                key="cashflow_sankey_reset_branch",
+                disabled=not (
+                    sankey_state.last_clicked_side
+                    and sankey_state.last_clicked_root
+                ),
+            ):
+                sankey_state.reset_last_branch()
+                st.rerun()
+        with controls[2]:
+            sankey_state.allow_negative_diff = st.toggle(
+                "Afficher le déficit si la différence est négative",
+                value=sankey_state.allow_negative_diff,
+                key="cashflow_sankey_allow_negative",
+            )
+        if (view.summary.difference < 0 and
+                not sankey_state.allow_negative_diff):
+            st.warning(
+                "La différence est négative sur la période, mais le nœud "
+                "« Déficit » est désactivé."
+            )
+
+        open_left = ", ".join(
+            f"{root} (niveau {depth})"
+            for root, depth in sorted(sankey_state.left_focus.items())
+        )
+        open_right = ", ".join(
+            f"{root} (niveau {depth})"
+            for root, depth in sorted(sankey_state.right_focus.items())
+        )
+        if open_left or open_right:
+            st.caption(
+                "Entrées ouvertes: "
+                f"{open_left or '—'} · Sorties ouvertes: {open_right or '—'}"
+            )
+
+        model = build_sankey_model(view, sankey_state)
+        fig = build_plotly_figure(model)
+        try:
+            from streamlit_plotly_events import plotly_events
+        except ImportError:  # pragma: no cover
+            st.error(
+                "Le module 'streamlit-plotly-events' est requis pour le "
+                "drill-down. Exécuter: uv sync"
+            )
+            plotly_events = None
+
+        if plotly_events is not None:
+            events = plotly_events(
+                fig,
+                click_event=True,
+                hover_event=False,
+                select_event=False,
+                key="cashflow_sankey_events",
+            )
+
+            node_index: int | None = None
+            if events:
+                point = events[0] or {}
+                candidate = point.get("pointNumber", point.get("pointIndex"))
+                if isinstance(candidate, int):
+                    node_index = candidate
+                elif (
+                    isinstance(candidate, (list, tuple))
+                    and candidate
+                    and isinstance(candidate[0], int)
+                ):
+                    node_index = candidate[0]
+
+            if node_index is not None:
+                changed = apply_click(
+                    state=sankey_state,
+                    model=model,
+                    node_index=node_index,
+                )
+                if changed:
+                    st.rerun()
         st.subheader("Détails")
         _render_cashflow_details(view)
     else:
