@@ -2,7 +2,7 @@
 
 from datetime import date
 
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
 
 from src.application.ports.database import DatabaseEnginePort
 from src.application.ports.gnucash_repository import (
@@ -150,11 +150,20 @@ class AnalyticsGnuCashRepository(GnuCashRepositoryPort):
         end_date: date | None,
         asset_root_name: str,
         currency_guid: str,
+        asset_account_guids: list[str] | None = None,
     ) -> list[CashflowRow]:
-        query = self._build_cashflow_query(start_date, end_date)
+        if asset_account_guids is not None and not asset_account_guids:
+            return []
+        query = self._build_cashflow_query(
+            start_date,
+            end_date,
+            use_asset_account_guids=asset_account_guids is not None,
+        )
         params = self._build_date_params(start_date, end_date)
         params["asset_root"] = asset_root_name
         params["currency_guid"] = currency_guid
+        if asset_account_guids is not None:
+            params["asset_account_guids"] = list(asset_account_guids)
         engine = self._db_port.get_analytics_engine()
         with engine.connect() as conn:
             rows = conn.execute(query, params).all()
@@ -338,6 +347,8 @@ class AnalyticsGnuCashRepository(GnuCashRepositoryPort):
     def _build_cashflow_query(
         start_date: date | None,
         end_date: date | None,
+        *,
+        use_asset_account_guids: bool = False,
     ):
         base_sql = """
         WITH RECURSIVE account_tree AS (
@@ -367,6 +378,10 @@ class AnalyticsGnuCashRepository(GnuCashRepositoryPort):
             SELECT guid
             FROM account_tree
             WHERE top_name = :asset_root
+        """
+        if use_asset_account_guids:
+            base_sql += " AND guid IN :asset_account_guids"
+        base_sql += """
         ),
         asset_transactions AS (
             SELECT DISTINCT s.tx_guid
@@ -434,7 +449,12 @@ class AnalyticsGnuCashRepository(GnuCashRepositoryPort):
         WHERE outgoing_amount <> 0
         ORDER BY account_full_name, account_guid, amount DESC
         """
-        return text(base_sql)
+        query = text(base_sql)
+        if use_asset_account_guids:
+            query = query.bindparams(
+                bindparam("asset_account_guids", expanding=True)
+            )
+        return query
 
 
 __all__ = ["AnalyticsGnuCashRepository"]

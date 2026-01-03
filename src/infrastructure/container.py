@@ -7,6 +7,9 @@ from src.application.ports.accounts_sync import (
     AccountsSourcePort,
 )
 from src.application.ports.accounts_repository import AccountsRepositoryPort
+from src.application.ports.accounts_tree_repository import (
+    AccountsTreeRepositoryPort,
+)
 from src.application.ports.analytics_repository import AnalyticsRepositoryPort
 from src.application.ports.database import DatabaseEnginePort
 from src.application.ports.gnucash_repository import GnuCashRepositoryPort
@@ -17,6 +20,9 @@ from src.infrastructure.accounts_sync import (
 )
 from src.infrastructure.accounts_repository import (
     SqlAlchemyAccountsRepository,
+)
+from src.infrastructure.accounts_tree_repository import (
+    SqlAlchemyAccountsTreeRepository,
 )
 from src.infrastructure.analytics_gnucash_repository import (
     AnalyticsGnuCashRepository,
@@ -84,6 +90,14 @@ def build_accounts_repository(
     return SqlAlchemyAccountsRepository(resolved_db)
 
 
+def build_accounts_tree_repository(
+    db_port: DatabaseEnginePort | None = None,
+) -> AccountsTreeRepositoryPort:
+    """Return the analytics mirrored accounts repository."""
+    resolved_db = db_port or build_database_adapter()
+    return SqlAlchemyAccountsTreeRepository(resolved_db)
+
+
 def build_analytics_repository(
     db_port: DatabaseEnginePort | None = None,
 ) -> AnalyticsRepositoryPort:
@@ -101,5 +115,6 @@ __all__ = [
     "build_accounts_source",
     "build_accounts_destination",
     "build_accounts_repository",
+    "build_accounts_tree_repository",
     "build_analytics_repository",
 ]

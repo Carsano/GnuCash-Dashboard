@@ -45,6 +45,7 @@ class AnalyticsRepositoryPort(Protocol):
         end_date: date | None,
         asset_root_name: str,
         currency_guid: str,
+        asset_account_guids: list[str] | None = None,
     ) -> list[CashflowRow]:
         """Return cashflow rows grouped by account."""
 

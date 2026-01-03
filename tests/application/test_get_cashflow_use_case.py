@@ -66,4 +66,5 @@ def test_execute_aggregates_rows_and_preserves_order() -> None:
         date(2024, 1, 31),
         asset_root_name="Actif",
         currency_guid="eur-guid",
+        asset_account_guids=None,
     )
