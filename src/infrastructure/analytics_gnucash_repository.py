@@ -25,8 +25,16 @@ class AnalyticsGnuCashRepository(GnuCashRepositoryPort):
             db_port: Port providing access to the analytics engine.
         """
         self._db_port = db_port
+        # Small in-memory cache to avoid repeated commodity lookups.
+        self._currency_guid_cache: dict[str, str] = {}
 
     def fetch_currency_guid(self, currency: str) -> str:
+        """
+        Fetch the guid for a currency mnemonic, using a small cache for efficiency.
+        """
+        cached = self._currency_guid_cache.get(currency)
+        if cached:
+            return cached
         query = text(
             """
             SELECT guid
@@ -40,6 +48,7 @@ class AnalyticsGnuCashRepository(GnuCashRepositoryPort):
             result = conn.execute(query, {"currency": currency}).first()
         if not result:
             raise RuntimeError(f"Missing currency in commodities: {currency}")
+        self._currency_guid_cache[currency] = result.guid
         return result.guid
 
     def fetch_net_worth_balances(
