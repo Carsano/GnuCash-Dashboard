@@ -15,6 +15,10 @@ from src.application.use_cases.get_account_balances import (
     AccountBalanceDTO,
     GetAccountBalancesUseCase,
 )
+from src.application.use_cases.get_cashflow import (
+    CashflowView,
+    GetCashflowUseCase,
+)
 from src.application.use_cases.get_net_worth_summary import (
     GetNetWorthSummaryUseCase,
     NetWorthSummary,
@@ -112,6 +116,31 @@ def _load_asset_category_breakdown(
     """Cached wrapper around _fetch_asset_category_breakdown."""
     _ = schema_version
     return _fetch_asset_category_breakdown(end_date, level)
+
+
+def _fetch_cashflow_view(
+    start_date: date | None,
+    end_date: date | None,
+) -> CashflowView:
+    """Fetch cashflow view using the analytics database."""
+    repository = build_analytics_repository()
+    use_case = GetCashflowUseCase(gnucash_repository=repository)
+    return use_case.execute(
+        start_date=start_date,
+        end_date=end_date,
+        target_currency="EUR",
+    )
+
+
+@st.cache_data(show_spinner=False)
+def _load_cashflow_view(
+    start_date: date | None,
+    end_date: date | None,
+    schema_version: int = 1,
+) -> CashflowView:
+    """Cached wrapper around _fetch_cashflow_view."""
+    _ = schema_version
+    return _fetch_cashflow_view(start_date, end_date)
 
 
 def _format_currency(value: Decimal, currency_code: str) -> str:
@@ -214,6 +243,76 @@ def _zero_summary(currency_code: str) -> NetWorthSummary:
         currency_code=currency_code,
     )
 
+
+def _render_cashflow_summary(view: CashflowView) -> None:
+    """Render cashflow totals with colored difference."""
+    summary = view.summary
+    incoming_col, outgoing_col, diff_col = st.columns(3)
+    incoming_col.metric(
+        "Entrées",
+        _format_currency(summary.total_in, summary.currency_code),
+    )
+    outgoing_col.metric(
+        "Sorties",
+        _format_currency(summary.total_out, summary.currency_code),
+    )
+    diff = summary.difference
+    diff_color = "#2e7d32" if diff >= 0 else "#c62828"
+    diff_col.markdown(
+        "<div style='font-size:0.9rem;color:#98a2b3'>"
+        "Différence</div>"
+        f"<div style='font-size:1.35rem;font-weight:600;"
+        f"color:{diff_color}'>"
+        f"{_format_currency(diff, summary.currency_code)}</div>",
+        unsafe_allow_html=True,
+    )
+
+
+def _render_cashflow_details(view: CashflowView) -> None:
+    """Render cashflow incoming and outgoing tables."""
+    incoming_data = [
+        {
+            "Compte": item.account_full_name,
+            "Montant": _format_currency(
+                item.amount,
+                view.summary.currency_code,
+            ),
+        }
+        for item in view.incoming
+    ]
+    outgoing_data = [
+        {
+            "Compte": item.account_full_name,
+            "Montant": _format_currency(
+                item.amount,
+                view.summary.currency_code,
+            ),
+        }
+        for item in view.outgoing
+    ]
+    incoming_col, outgoing_col = st.columns(2)
+    with incoming_col:
+        st.markdown("#### Entrants")
+        if incoming_data:
+            st.dataframe(
+                incoming_data,
+                width="stretch",
+                hide_index=True,
+                height=360,
+            )
+        else:
+            st.caption("Aucun flux entrant sur la période.")
+    with outgoing_col:
+        st.markdown("#### Sortants")
+        if outgoing_data:
+            st.dataframe(
+                outgoing_data,
+                width="stretch",
+                hide_index=True,
+                height=360,
+            )
+        else:
+            st.caption("Aucun flux sortant sur la période.")
 
 def _render_accounts(accounts: Sequence[AccountDTO]) -> None:
     """Render the accounts table with light filtering."""
@@ -609,7 +708,10 @@ def main() -> None:
     st.set_page_config(page_title="GnuCash Dashboard", layout="wide")
     st.title("GnuCash Dashboard")
 
-    page = st.sidebar.radio("Page", ["Dashboard", "Accounts", "Budget"])
+    page = st.sidebar.radio(
+        "Page",
+        ["Dashboard", "Accounts", "Flux de trésorerie", "Budget"],
+    )
 
     if page == "Dashboard":
         today = date.today()
@@ -744,6 +846,18 @@ def main() -> None:
             st.warning("No accounts found. Run the sync first.")
             return
         _render_accounts(accounts)
+    elif page == "Flux de trésorerie":
+        today = date.today()
+        start_date, end_date = _get_date_inputs(today)
+        view = _load_cashflow_view(
+            start_date,
+            end_date,
+            schema_version=1,
+        )
+        st.subheader("Synthèse")
+        _render_cashflow_summary(view)
+        st.subheader("Détails")
+        _render_cashflow_details(view)
     else:
         st.subheader("Budget")
         st.info("Budget view coming soon.")

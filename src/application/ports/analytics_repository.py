@@ -6,6 +6,7 @@ from typing import Protocol
 from src.domain.models import (
     AccountBalanceRow,
     AssetCategoryBalanceRow,
+    CashflowRow,
     NetWorthBalanceRow,
     PriceRow,
 )
@@ -37,6 +38,15 @@ class AnalyticsRepositoryPort(Protocol):
         end_date: date | None,
     ) -> list[AccountBalanceRow]:
         """Return balances grouped by account."""
+
+    def fetch_cashflow_rows(
+        self,
+        start_date: date | None,
+        end_date: date | None,
+        asset_root_name: str,
+        currency_guid: str,
+    ) -> list[CashflowRow]:
+        """Return cashflow rows grouped by account."""
 
     def fetch_latest_prices(
         self,

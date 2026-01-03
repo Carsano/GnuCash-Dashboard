@@ -39,8 +39,19 @@ class PriceRow:
     date: date
 
 
+@dataclass(frozen=True)
+class CashflowRow:
+    """Row representing a cashflow aggregate for an account."""
+
+    account_guid: str
+    account_full_name: str
+    top_parent_name: str | None
+    amount: Decimal
+
+
 __all__ = [
     "NetWorthBalanceRow",
     "AssetCategoryBalanceRow",
     "PriceRow",
+    "CashflowRow",
 ]
