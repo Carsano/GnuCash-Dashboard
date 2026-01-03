@@ -11,7 +11,7 @@ from src.application.ports.gnucash_repository import (
     NetWorthBalanceRow,
     PriceRow,
 )
-from src.domain.models import AccountBalanceRow
+from src.domain.models import AccountBalanceRow, CashflowRow
 from src.utils.decimal_utils import coerce_decimal
 
 
@@ -25,8 +25,16 @@ class AnalyticsGnuCashRepository(GnuCashRepositoryPort):
             db_port: Port providing access to the analytics engine.
         """
         self._db_port = db_port
+        # Small in-memory cache to avoid repeated commodity lookups.
+        self._currency_guid_cache: dict[str, str] = {}
 
     def fetch_currency_guid(self, currency: str) -> str:
+        """
+        Fetch the guid for a currency mnemonic, using a small cache for efficiency.
+        """
+        cached = self._currency_guid_cache.get(currency)
+        if cached:
+            return cached
         query = text(
             """
             SELECT guid
@@ -40,6 +48,7 @@ class AnalyticsGnuCashRepository(GnuCashRepositoryPort):
             result = conn.execute(query, {"currency": currency}).first()
         if not result:
             raise RuntimeError(f"Missing currency in commodities: {currency}")
+        self._currency_guid_cache[currency] = result.guid
         return result.guid
 
     def fetch_net_worth_balances(
@@ -135,23 +144,47 @@ class AnalyticsGnuCashRepository(GnuCashRepositoryPort):
             key=lambda row: (row.name.lower(), row.guid),
         )
 
+    def fetch_cashflow_rows(
+        self,
+        start_date: date | None,
+        end_date: date | None,
+        asset_root_name: str,
+        currency_guid: str,
+    ) -> list[CashflowRow]:
+        query = self._build_cashflow_query(start_date, end_date)
+        params = self._build_date_params(start_date, end_date)
+        params["asset_root"] = asset_root_name
+        params["currency_guid"] = currency_guid
+        engine = self._db_port.get_analytics_engine()
+        with engine.connect() as conn:
+            rows = conn.execute(query, params).all()
+        cashflow_rows = [
+            CashflowRow(
+                account_guid=row.account_guid,
+                account_full_name=row.account_full_name,
+                top_parent_name=row.top_parent_name,
+                amount=coerce_decimal(row.amount),
+            )
+            for row in rows
+        ]
+        return list(cashflow_rows)
+
     def fetch_latest_prices(
         self,
         currency_guid: str,
         end_date: date | None,
     ) -> list[PriceRow]:
-        query = text(
-            """
+        base_sql = """
             SELECT commodity_guid, value_num, value_denom, date
             FROM prices
             WHERE currency_guid = :currency_guid
-            """
-        )
+        """
         params = {"currency_guid": currency_guid}
         if end_date:
-            query = text(query.text + " AND date <= :end_date")
+            base_sql += " AND date <= :end_date"
             params["end_date"] = end_date
-        query = text(query.text + " ORDER BY commodity_guid, date DESC")
+        base_sql += " ORDER BY commodity_guid, date DESC"
+        query = text(base_sql)
         engine = self._db_port.get_analytics_engine()
         with engine.connect() as conn:
             rows = conn.execute(query, params).all()
@@ -164,11 +197,8 @@ class AnalyticsGnuCashRepository(GnuCashRepositoryPort):
             )
             for row in rows
         ]
-        return sorted(
-            prices,
-            key=lambda row: (row.commodity_guid, row.date),
-            reverse=True,
-        )
+        # Query already orders by (commodity_guid ASC, date DESC).
+        return prices
 
     @staticmethod
     def _build_date_params(
@@ -302,6 +332,108 @@ class AnalyticsGnuCashRepository(GnuCashRepositoryPort):
             " GROUP BY a.guid, a.name, a.account_type, a.parent_guid, "
             "a.commodity_guid, c.mnemonic, c.namespace"
         )
+        return text(base_sql)
+
+    @staticmethod
+    def _build_cashflow_query(
+        start_date: date | None,
+        end_date: date | None,
+    ):
+        base_sql = """
+        WITH RECURSIVE account_tree AS (
+            SELECT guid,
+                   parent_guid,
+                   name,
+                   NULL::TEXT AS full_name,
+                   NULL::TEXT AS top_name
+            FROM accounts
+            WHERE parent_guid IS NULL
+            UNION ALL
+            SELECT a.guid,
+                   a.parent_guid,
+                   a.name,
+                   CASE
+                       WHEN at.full_name IS NULL THEN a.name
+                       ELSE at.full_name || ':' || a.name
+                   END AS full_name,
+                   CASE
+                       WHEN at.top_name IS NULL THEN a.name
+                       ELSE at.top_name
+                   END AS top_name
+            FROM accounts a
+            JOIN account_tree at ON a.parent_guid = at.guid
+        ),
+        asset_accounts AS (
+            SELECT guid
+            FROM account_tree
+            WHERE top_name = :asset_root
+        ),
+        asset_transactions AS (
+            SELECT DISTINCT s.tx_guid
+            FROM splits s
+            JOIN asset_accounts aa ON aa.guid = s.account_guid
+            JOIN transactions t ON t.guid = s.tx_guid
+            JOIN accounts a ON a.guid = s.account_guid
+            JOIN commodities c ON c.guid = a.commodity_guid
+            WHERE c.guid = :currency_guid
+        """
+        if start_date:
+            base_sql += " AND t.post_date >= :start_date"
+        if end_date:
+            base_sql += " AND t.post_date <= :end_date"
+        base_sql += """
+        ),
+        cashflow_splits AS (
+            SELECT a.guid AS account_guid,
+                   at.full_name AS account_full_name,
+                   at.top_name AS top_parent_name,
+                   CASE
+                       WHEN c.namespace = 'CURRENCY'
+                           THEN -CAST(s.value_num AS NUMERIC) / NULLIF(s.value_denom, 0)
+                       ELSE -CAST(s.quantity_num AS NUMERIC) / NULLIF(s.quantity_denom, 0)
+                    END AS signed_amount
+            FROM splits s
+            JOIN asset_transactions atx ON atx.tx_guid = s.tx_guid
+            JOIN accounts a ON a.guid = s.account_guid
+            JOIN account_tree at ON at.guid = a.guid
+            JOIN commodities c ON c.guid = a.commodity_guid
+            WHERE NOT EXISTS (
+                  SELECT 1
+                  FROM asset_accounts aa
+                  WHERE aa.guid = a.guid
+              )
+              AND c.guid = :currency_guid
+        ),
+        cashflow_aggregates AS (
+            SELECT account_guid,
+                   account_full_name,
+                   top_parent_name,
+                   SUM(CASE
+                           WHEN signed_amount > 0 THEN signed_amount
+                           ELSE 0
+                       END) AS incoming_amount,
+                   SUM(CASE
+                           WHEN signed_amount < 0 THEN signed_amount
+                           ELSE 0
+                       END) AS outgoing_amount
+            FROM cashflow_splits
+            GROUP BY account_guid, account_full_name, top_parent_name
+        )
+        SELECT account_guid,
+               account_full_name,
+               top_parent_name,
+               incoming_amount AS amount
+        FROM cashflow_aggregates
+        WHERE incoming_amount <> 0
+        UNION ALL
+        SELECT account_guid,
+               account_full_name,
+               top_parent_name,
+               outgoing_amount AS amount
+        FROM cashflow_aggregates
+        WHERE outgoing_amount <> 0
+        ORDER BY account_full_name, account_guid, amount DESC
+        """
         return text(base_sql)
 
 

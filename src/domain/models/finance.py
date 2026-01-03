@@ -37,8 +37,43 @@ class AssetCategoryBreakdown:
     categories: list[AssetCategoryAmount]
 
 
+@dataclass(frozen=True)
+class CashflowSummary:
+    """Summary of cashflow totals."""
+
+    total_in: Decimal
+    total_out: Decimal
+    currency_code: str
+
+    @property
+    def difference(self) -> Decimal:
+        """Return total_in minus total_out."""
+        return self.total_in - self.total_out
+
+
+@dataclass(frozen=True)
+class CashflowItem:
+    """Cashflow aggregate for a single account."""
+
+    account_full_name: str
+    amount: Decimal
+    top_parent_name: str | None = None
+
+
+@dataclass(frozen=True)
+class CashflowView:
+    """Cashflow summary and details for UI rendering."""
+
+    summary: CashflowSummary
+    incoming: list[CashflowItem]
+    outgoing: list[CashflowItem]
+
+
 __all__ = [
     "NetWorthSummary",
     "AssetCategoryAmount",
     "AssetCategoryBreakdown",
+    "CashflowSummary",
+    "CashflowItem",
+    "CashflowView",
 ]

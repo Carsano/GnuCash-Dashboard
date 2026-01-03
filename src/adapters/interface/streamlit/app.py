@@ -15,6 +15,10 @@ from src.application.use_cases.get_account_balances import (
     AccountBalanceDTO,
     GetAccountBalancesUseCase,
 )
+from src.application.use_cases.get_cashflow import (
+    CashflowView,
+    GetCashflowUseCase,
+)
 from src.application.use_cases.get_net_worth_summary import (
     GetNetWorthSummaryUseCase,
     NetWorthSummary,
@@ -28,6 +32,12 @@ from src.infrastructure.container import (
     build_analytics_repository,
 )
 from src.infrastructure.logging.logger import get_app_logger
+
+from src.adapters.interface.streamlit.sankey_cashflow import (
+    SankeyState,
+    build_plotly_figure,
+    build_sankey_model,
+)
 
 
 def _fetch_accounts() -> Sequence[AccountDTO]:
@@ -114,6 +124,31 @@ def _load_asset_category_breakdown(
     return _fetch_asset_category_breakdown(end_date, level)
 
 
+def _fetch_cashflow_view(
+    start_date: date | None,
+    end_date: date | None,
+) -> CashflowView:
+    """Fetch cashflow view using the analytics database."""
+    repository = build_analytics_repository()
+    use_case = GetCashflowUseCase(gnucash_repository=repository)
+    return use_case.execute(
+        start_date=start_date,
+        end_date=end_date,
+        target_currency="EUR",
+    )
+
+
+@st.cache_data(show_spinner=False)
+def _load_cashflow_view(
+    start_date: date | None,
+    end_date: date | None,
+    schema_version: int = 1,
+) -> CashflowView:
+    """Cached wrapper around _fetch_cashflow_view."""
+    _ = schema_version
+    return _fetch_cashflow_view(start_date, end_date)
+
+
 def _format_currency(value: Decimal, currency_code: str) -> str:
     """Format currency values for display."""
     symbol = "€" if currency_code == "EUR" else currency_code
@@ -184,23 +219,47 @@ def _get_period_start(
     return None
 
 
-def _get_date_inputs(today: date) -> tuple[date, date]:
-    """Return start/end dates chosen in the dashboard."""
-    start_col, end_col = st.columns(2)
-    with start_col:
-        start_date = st.date_input(
-            "Start date",
-            value=date(today.year, 1, 1),
-            max_value=today,
-        )
-    with end_col:
-        end_date = st.date_input(
-            "End date",
-            value=today,
-            max_value=today,
-        )
+def _get_date_inputs(today: date, *, key_prefix: str) -> tuple[date, date]:
+    """Return start/end dates chosen in the dashboard.
+
+    Args:
+        today: Reference date used for max values and defaults.
+        key_prefix: Prefix used to keep widget state isolated per page.
+
+    Returns:
+        Tuple of (start_date, end_date).
+    """
+    start_key = f"{key_prefix}_start_date"
+    end_key = f"{key_prefix}_end_date"
+    form_key = f"{key_prefix}_date_form"
+
+    if start_key not in st.session_state:
+        st.session_state[start_key] = date(today.year, 1, 1)
+    if end_key not in st.session_state:
+        st.session_state[end_key] = today
+
+    with st.form(form_key, clear_on_submit=False):
+        start_col, end_col = st.columns(2)
+        with start_col:
+            st.date_input(
+                "Start date",
+                key=start_key,
+                max_value=today,
+            )
+        with end_col:
+            st.date_input(
+                "End date",
+                key=end_key,
+                max_value=today,
+            )
+        st.form_submit_button("Appliquer")
+
+    start_date: date = st.session_state[start_key]
+    end_date: date = st.session_state[end_key]
     if start_date > end_date:
         st.warning("Start date is after end date. Swapping values.")
+        st.session_state[start_key] = end_date
+        st.session_state[end_key] = start_date
         start_date, end_date = end_date, start_date
     return start_date, end_date
 
@@ -213,6 +272,77 @@ def _zero_summary(currency_code: str) -> NetWorthSummary:
         net_worth=Decimal("0"),
         currency_code=currency_code,
     )
+
+
+def _render_cashflow_summary(view: CashflowView) -> None:
+    """Render cashflow totals with colored difference."""
+    summary = view.summary
+    incoming_col, outgoing_col, diff_col = st.columns(3)
+    incoming_col.metric(
+        "Entrées",
+        _format_currency(summary.total_in, summary.currency_code),
+    )
+    outgoing_col.metric(
+        "Sorties",
+        _format_currency(summary.total_out, summary.currency_code),
+    )
+    diff = summary.difference
+    diff_color = "#2e7d32" if diff >= 0 else "#c62828"
+    diff_col.markdown(
+        "<div style='font-size:0.9rem;color:#98a2b3'>"
+        "Différence</div>"
+        f"<div style='font-size:1.35rem;font-weight:600;"
+        f"color:{diff_color}'>"
+        f"{_format_currency(diff, summary.currency_code)}</div>",
+        unsafe_allow_html=True,
+    )
+
+
+def _render_cashflow_details(view: CashflowView) -> None:
+    """Render cashflow incoming and outgoing tables."""
+    incoming_data = [
+        {
+            "Compte": item.account_full_name,
+            "Montant": _format_currency(
+                item.amount,
+                view.summary.currency_code,
+            ),
+        }
+        for item in view.incoming
+    ]
+    outgoing_data = [
+        {
+            "Compte": item.account_full_name,
+            "Montant": _format_currency(
+                item.amount,
+                view.summary.currency_code,
+            ),
+        }
+        for item in view.outgoing
+    ]
+    incoming_col, outgoing_col = st.columns(2)
+    with incoming_col:
+        st.markdown("#### Entrants")
+        if incoming_data:
+            st.dataframe(
+                incoming_data,
+                width="stretch",
+                hide_index=True,
+                height=360,
+            )
+        else:
+            st.caption("Aucun flux entrant sur la période.")
+    with outgoing_col:
+        st.markdown("#### Sortants")
+        if outgoing_data:
+            st.dataframe(
+                outgoing_data,
+                width="stretch",
+                hide_index=True,
+                height=360,
+            )
+        else:
+            st.caption("Aucun flux sortant sur la période.")
 
 
 def _render_accounts(accounts: Sequence[AccountDTO]) -> None:
@@ -609,11 +739,14 @@ def main() -> None:
     st.set_page_config(page_title="GnuCash Dashboard", layout="wide")
     st.title("GnuCash Dashboard")
 
-    page = st.sidebar.radio("Page", ["Dashboard", "Accounts", "Budget"])
+    page = st.sidebar.radio(
+        "Page",
+        ["Dashboard", "Accounts", "Flux de trésorerie", "Budget"],
+    )
 
     if page == "Dashboard":
         today = date.today()
-        start_date, end_date = _get_date_inputs(today)
+        start_date, end_date = _get_date_inputs(today, key_prefix="dashboard")
         baseline_end = start_date - timedelta(days=1)
 
         summary = _load_net_worth_summary(None, end_date, schema_version=2)
@@ -744,6 +877,82 @@ def main() -> None:
             st.warning("No accounts found. Run the sync first.")
             return
         _render_accounts(accounts)
+    elif page == "Flux de trésorerie":
+        today = date.today()
+        start_date, end_date = _get_date_inputs(today, key_prefix="cashflow")
+        view = _load_cashflow_view(
+            start_date,
+            end_date,
+            schema_version=1,
+        )
+        st.subheader("Synthèse")
+        _render_cashflow_summary(view)
+        st.subheader("Cashflow Sankey")
+        show_sankey = st.toggle(
+            "Afficher la visualisation Sankey (peut ralentir si très dense)",
+            value=False,
+            key="cashflow_show_sankey",
+        )
+        if show_sankey:
+            allow_negative_diff = st.toggle(
+                "Afficher le déficit si la différence est négative",
+                value=bool(
+                    st.session_state.get("cashflow_sankey_allow_negative", False)
+                ),
+                key="cashflow_sankey_allow_negative",
+            )
+            if view.summary.difference < 0 and not allow_negative_diff:
+                st.warning(
+                    "La différence est négative sur la période, mais le nœud "
+                    "« Déficit » est désactivé."
+                )
+
+            sankey_state = SankeyState(allow_negative_diff=allow_negative_diff)
+
+            desired_signature = (
+                start_date,
+                end_date,
+                sankey_state.allow_negative_diff,
+            )
+            signature_key = "cashflow_sankey_signature"
+            model_key = "cashflow_sankey_model"
+            fig_key = "cashflow_sankey_fig"
+
+            last_signature = st.session_state.get(signature_key)
+            needs_refresh = last_signature != desired_signature
+            has_cached = (
+                fig_key in st.session_state and model_key in st.session_state
+            )
+
+            refresh_col, hint_col = st.columns([1, 3])
+            with refresh_col:
+                refresh_clicked = st.button(
+                    "Rafraîchir Sankey",
+                    key="cashflow_sankey_refresh",
+                    type="primary" if (
+                        not has_cached or needs_refresh) else "secondary",
+                )
+            with hint_col:
+                if needs_refresh and has_cached:
+                    st.info(
+                        "Le Sankey n'est pas à jour pour ces paramètres. "
+                        "Clique « Rafraîchir Sankey » pour recalculer."
+                    )
+
+            if not has_cached or refresh_clicked:
+                with st.spinner("Construction du Sankey…"):
+                    model = build_sankey_model(view, sankey_state)
+                    fig = build_plotly_figure(model)
+                st.session_state[signature_key] = desired_signature
+                st.session_state[model_key] = model
+                st.session_state[fig_key] = fig
+            else:
+                model = st.session_state[model_key]
+                fig = st.session_state[fig_key]
+            _ = model
+            st.plotly_chart(fig, width='stretch')
+        st.subheader("Détails")
+        _render_cashflow_details(view)
     else:
         st.subheader("Budget")
         st.info("Budget view coming soon.")
