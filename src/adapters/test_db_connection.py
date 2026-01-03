@@ -5,13 +5,13 @@ database adapter from the infrastructure layer and runs a basic health
 check against both GnuCash and analytics databases.
 """
 
-from src.infrastructure.db import SqlAlchemyDatabaseEngineAdapter
 from src.infrastructure.logging.logger import get_app_logger
+from src.infrastructure.container import build_database_adapter
 
 
 def main() -> None:
     """Run basic connectivity checks against configured databases."""
-    adapter = SqlAlchemyDatabaseEngineAdapter()
+    adapter = build_database_adapter()
     logger = get_app_logger()
 
     gnucash_engine = adapter.get_gnucash_engine()

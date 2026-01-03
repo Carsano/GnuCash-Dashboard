@@ -50,8 +50,46 @@ GnuCash (PostgreSQL) -> Transformation job -> Analytics schema/views -> Streamli
    - create a read-only role pointing to the existing GnuCash database;
    - create a separate schema/database (`finances_analytics`) for derived tables;
    - set environment variables `GNUCASH_DB_URL` and `ANALYTICS_DB_URL` (can be the same DB with two schemas).
+   - optional: set `GNUCASH_BACKEND=piecash` and `PIECASH_FILE=/path/to/book.gnucash` to use piecash from a local file.
+   - optional: for piecash + PostgreSQL, set `PIECASH_FILE=postgresql://user:pass@host/dbname` (requires `piecash[postgres]`).
 4. **Schedule synchronization**:
    - run `uv run python sync_gnucash.py` via cron/systemd or GitHub Actions to refresh analytics tables.
+
+## Usage
+
+### Without piecash (SQL-only)
+
+- Install dependencies: `uv sync`
+- Use the SQL backend (default): `GNUCASH_BACKEND=sqlalchemy`
+- Sync analytics tables: `uv run python -m src.adapters.sync_gnucash_analytics_cli`
+- Run the dashboard against analytics: `uv run python -m streamlit run src/adapters/interface/streamlit/app.py`
+
+### With piecash (optional)
+
+- Install dependencies: `uv sync --extra piecash`
+- Use a local book: `GNUCASH_BACKEND=piecash` + `PIECASH_FILE=/path/to/book.gnucash`
+- Or use Postgres: `PIECASH_FILE=postgresql://user:pass@host/dbname`
+- Run the sync: `uv run python -m src.adapters.sync_gnucash_analytics_cli`
+- Run the dashboard against analytics: `uv run python -m streamlit run src/adapters/interface/streamlit/app.py`
+
+### Analytics Views (optional)
+
+If you want the dashboard to read from precomputed analytics views instead of raw
+tables, set:
+
+```
+ANALYTICS_READ_MODE=views
+```
+
+Expected views (analytics DB):
+- `vw_currency_lookup(guid, mnemonic, namespace)`
+- `vw_net_worth_balances(account_type, commodity_guid, mnemonic, namespace, balance, post_date)`
+- `vw_asset_category_balances(account_type, commodity_guid, mnemonic, namespace, actif_category, actif_subcategory, balance, actif_root_name, post_date)`
+- `vw_latest_prices(commodity_guid, currency_guid, value_num, value_denom, date)`
+
+- Sync accounts: `uv run python -m src.adapters.sync_accounts_cli`
+- Sync GnuCash tables into analytics: `uv run python -m src.adapters.sync_gnucash_analytics_cli`
+- Compare SQL vs piecash: `uv run python -m src.adapters.compare_backends_cli`
 
 ## Shaping GnuCash Data
 
@@ -68,6 +106,30 @@ GnuCash (PostgreSQL) -> Transformation job -> Analytics schema/views -> Streamli
 - Offer one page per theme: `Overview`, `Cashflow`, `Budgets`, `Alerts`.
 - Add a control panel (period selection, accounts, currency).
 
+## Switching Backends
+
+Use the SQLAlchemy backend by default (`GNUCASH_BACKEND=sqlalchemy`). To switch the dashboard to analytics:
+
+- run `uv run python -m src.adapters.sync_gnucash_analytics_cli`
+- run the dashboard (it reads analytics tables by default)
+
+To prepare a piecash migration:
+
+- set `GNUCASH_BACKEND=piecash`
+- set `PIECASH_FILE=/absolute/path/to/book.gnucash`
+- or use `PIECASH_FILE=postgresql://user:pass@host/dbname` for a Postgres-backed book
+
+The Streamlit front end stays unchanged; only the backend selector changes.
+
+## Migration Checklist
+
+- Install `piecash` (optional) and ensure the GnuCash book is readable locally.
+- For Postgres-backed books, install the optional extra `piecash[postgres]`.
+- Set `GNUCASH_BACKEND=piecash` and `PIECASH_FILE` to the book path or URI.
+- Run the contract tests (`uv run pytest tests/application/test_gnucash_repository_contracts.py`).
+- Compare logged source summaries (balances/prices) between SQL and piecash runs.
+- Validate dashboards and sync outputs on a staging dataset before switching.
+
 ## Immediate Roadmap
 
 - [ ] Add ETL dependencies (`sqlalchemy`, `asyncpg`, `pandas`).
@@ -78,95 +140,27 @@ GnuCash (PostgreSQL) -> Transformation job -> Analytics schema/views -> Streamli
 
 ## Suggested Project Structure
 
-Below is the folder layout to keep hexagonal boundaries explicit while hosting Streamlit, ETL, and database adapters:
+Current layout (hexagonal):
 
 ```code
-personal_finance_dashboard/
-├── app.py
-├── pyproject.toml
-├── README.md
-├── src/
-│   ├── __init__.py
-│   ├── domain/
-│   │   ├── __init__.py
-│   │   ├── models/
-│   │   │   ├── __init__.py
-│   │   │   ├── account.py
-│   │   │   ├── transaction.py
-│   │   │   ├── commodity.py
-│   │   │   └── budget.py
-│   │   ├── repositories/
-│   │   │   ├── __init__.py
-│   │   │   ├── account_repository.py
-│   │   │   ├── transaction_repository.py
-│   │   │   └── budget_repository.py
-│   │   ├── services/
-│   │   │   ├── __init__.py
-│   │   │   ├── balance_service.py
-│   │   │   ├── cashflow_service.py
-│   │   │   └── kpi_service.py
-│   │   └── value_objects.py
-│   ├── application/
-│   │   ├── __init__.py
-│   │   ├── ports/
-│   │   │   ├── __init__.py
-│   │   │   ├── account_port.py
-│   │   │   ├── transaction_port.py
-│   │   │   └── dashboard_port.py
-│   │   ├── use_cases/
-│   │   │   ├── __init__.py
-│   │   │   ├── get_dashboard_kpis.py
-│   │   │   ├── get_expenses_by_category.py
-│   │   │   └── get_cashflow_timeseries.py
-│   │   └── dto/
-│   │       ├── __init__.py
-│   │       └── dashboard_dto.py
-│   ├── infrastructure/
-│   │   ├── __init__.py
-│   │   ├── db/
-│   │   │   ├── __init__.py
-│   │   │   ├── config.py
-│   │   │   ├── connection.py
-│   │   │   └── migrations/
-│   │   ├── orm/
-│   │   │   ├── __init__.py
-│   │   │   ├── account_table.py
-│   │   │   ├── transaction_table.py
-│   │   │   └── splits_table.py
-│   │   ├── repositories/
-│   │   │   ├── __init__.py
-│   │   │   ├── postgres_account_repository.py
-│   │   │   └── postgres_transaction_repository.py
-│   │   └── gnucash/
-│   │       ├── __init__.py
-│   │       └── schema_mapping.py
-│   ├── interface/
-│   │   ├── __init__.py
-│   │   ├── streamlit/
-│   │   │   ├── __init__.py
-│   │   │   ├── app.py
-│   │   │   ├── pages/
-│   │   │   │   ├── __init__.py
-│   │   │   │   ├── dashboard.py
-│   │   │   │   ├── cashflow.py
-│   │   │   │   └── categories.py
-│   │   │   └── components.py
-│   │   └── cli/
-│   │       ├── __init__.py
-│   │       └── export_csv.py
-│   └── config/
-│       ├── __init__.py
-│       ├── settings.py
-│       └── logging_conf.py
-├── tests/
-│   ├── __init__.py
-│   ├── domain/
-│   ├── application/
-│   ├── infrastructure/
+src/
+├── domain/
+│   ├── constants.py
+│   ├── models/
+│   ├── policies/
+│   └── services/
+├── application/
+│   ├── ports/
+│   └── use_cases/
+├── infrastructure/
+├── adapters/
 │   └── interface/
-└── .env.example
+└── utils/
+tests/
 ```
 
-This split makes each layer’s responsibility explicit: the domain layer stays pure; application orchestrates use cases and ports; infrastructure houses secondary adapters (PostgreSQL, ORM, GnuCash mappings); interface hosts primary adapters such as Streamlit and CLI tooling. Tests mirror the production layout for focused coverage.
-
-Ports (interfaces) reside under `personal_finance/application/ports/`. Each port defines the contract that infrastructure adapters must satisfy—e.g., `account_port.py` for repository operations or `dashboard_port.py` for data needed by Streamlit—so the use cases can remain framework-agnostic.
+This split keeps each layer explicit:
+- `domain/` is pure business logic and models (no SQL/IO).
+- `application/` orchestrates use cases and defines ports.
+- `infrastructure/` implements the ports (SQLAlchemy, piecash, ETL).
+- `adapters/` wires UI/CLI to the application layer.

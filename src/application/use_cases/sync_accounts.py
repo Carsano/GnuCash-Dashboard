@@ -2,58 +2,20 @@
 
 This module defines a simple ETL-style use case that:
 
-* reads accounts from the GnuCash PostgreSQL backend;
+* reads accounts from the configured source adapter;
 * ensures an analytics table for dimensional accounts exists;
 * truncates the analytics table and reloads its content from the source.
 """
 
 from dataclasses import dataclass
-from typing import Any
 
-from sqlalchemy import text
-from sqlalchemy.engine import Engine
-
-from src.application.ports.database import DatabaseEnginePort
+from src.application.ports.accounts_sync import (
+    AccountRecord,
+    AccountsDestinationPort,
+    AccountsSourcePort,
+)
+from src.domain.policies.account_filters import is_valid_account_name
 from src.infrastructure.logging.logger import get_app_logger
-
-
-SELECT_ACCOUNTS_SQL = text(
-    """
-    SELECT guid, name, account_type, commodity_guid, parent_guid
-    FROM accounts
-    """
-)
-
-INSERT_ACCOUNTS_SQL = text(
-    """
-    INSERT INTO accounts_dim (
-        guid,
-        name,
-        account_type,
-        commodity_guid,
-        parent_guid
-    )
-    VALUES (
-        :guid,
-        :name,
-        :account_type,
-        :commodity_guid,
-        :parent_guid
-    )
-    """
-)
-
-TRUNCATE_ACCOUNTS_SQL = "TRUNCATE TABLE accounts_dim"
-
-CREATE_ACCOUNTS_DIM_SQL = """
-CREATE TABLE IF NOT EXISTS accounts_dim (
-    guid TEXT PRIMARY KEY,
-    name TEXT,
-    account_type TEXT,
-    commodity_guid TEXT,
-    parent_guid TEXT
-)
-"""
 
 
 @dataclass(frozen=True)
@@ -72,18 +34,25 @@ class SyncAccountsResult:
 class SyncAccountsUseCase:
     """Synchronize GnuCash accounts into the analytics database.
 
-    The use case uses the DatabaseEnginePort to remain decoupled from concrete
-    database drivers or configuration details.
+    The use case depends on ports to remain decoupled from concrete
+    database drivers or storage configuration details.
     """
 
-    def __init__(self, db_port: DatabaseEnginePort, logger=None) -> None:
+    def __init__(
+        self,
+        source_port: AccountsSourcePort,
+        destination_port: AccountsDestinationPort,
+        logger=None,
+    ) -> None:
         """Initialize the use case.
 
         Args:
-            db_port: Port providing access to GnuCash and analytics engines.
+            source_port: Port providing access to source accounts.
+            destination_port: Port responsible for analytics writes.
             logger: Optional logger compatible with logging.Logger-like API.
         """
-        self._db_port = db_port
+        self._source_port = source_port
+        self._destination_port = destination_port
         self._logger = logger or get_app_logger()
 
     def run(self) -> SyncAccountsResult:
@@ -95,83 +64,46 @@ class SyncAccountsUseCase:
         Returns:
             SyncAccountsResult: Summary of how many rows were processed.
         """
-        gnucash_engine = self._db_port.get_gnucash_engine()
-        analytics_engine = self._db_port.get_analytics_engine()
-
-        accounts = self._fetch_source_accounts(gnucash_engine)
-        self._prepare_analytics_destination(analytics_engine)
-        inserted_count = self._refresh_analytics_accounts(
-            analytics_engine,
-            accounts,
+        source_accounts = self._source_port.fetch_accounts()
+        self._logger.info(
+            f"Fetched {len(source_accounts)} accounts from source"
+        )
+        accounts = self._filter_accounts(source_accounts)
+        self._destination_port.prepare_destination()
+        inserted_count = self._destination_port.refresh_accounts(accounts)
+        self._logger.info(
+            f"Inserted {inserted_count} accounts into analytics.accounts_dim"
         )
 
         return SyncAccountsResult(
-            source_count=len(accounts),
+            source_count=len(source_accounts),
             inserted_count=inserted_count,
         )
 
-    def _fetch_source_accounts(
+    def _filter_accounts(
         self,
-        gnucash_engine: Engine,
-    ) -> list[dict[str, Any]]:
-        """Read accounts from the GnuCash database.
+        accounts: list[AccountRecord],
+    ) -> list[AccountRecord]:
+        """Filter out accounts with invalid names.
 
         Args:
-            gnucash_engine: SQLAlchemy engine for the GnuCash backend.
+            accounts: Raw records extracted from the GnuCash source.
 
         Returns:
-            list[dict[str, Any]]: Raw account rows converted into dictionaries.
+            list[AccountRecord]: Records with validated, sorted names.
         """
-        with gnucash_engine.connect() as conn:
-            rows = conn.execute(SELECT_ACCOUNTS_SQL).all()
-
-        accounts = [dict(row._mapping) for row in rows]
-        accounts = sorted(accounts, key=lambda row: row.get("guid", ""))
-        self._logger.info(
-            f"Fetched {len(accounts)} accounts from GnuCash source"
-        )
-        return accounts
-
-    def _prepare_analytics_destination(self, analytics_engine: Engine) -> None:
-        """Ensure the analytics destination can receive data.
-
-        Args:
-            analytics_engine: SQLAlchemy engine for the analytics database.
-        """
-        self._ensure_analytics_table(analytics_engine)
-
-    def _refresh_analytics_accounts(
-        self,
-        analytics_engine: Engine,
-        accounts: list[dict[str, Any]],
-    ) -> int:
-        """Replace analytics accounts with the provided records.
-
-        Args:
-            analytics_engine: SQLAlchemy engine for the analytics database.
-            accounts: Records extracted from the GnuCash source.
-
-        Returns:
-            int: Number of accounts inserted into the destination table.
-        """
-        with analytics_engine.begin() as conn:
-            conn.exec_driver_sql(TRUNCATE_ACCOUNTS_SQL)
-            if accounts:
-                conn.execute(INSERT_ACCOUNTS_SQL, accounts)
-
-        self._logger.info(
-            f"Inserted {len(accounts)} accounts into analytics.accounts_dim"
-        )
-        return len(accounts)
-
-    def _ensure_analytics_table(self, analytics_engine: Engine) -> None:
-        """Create the analytics accounts_dim table if it does not exist.
-
-        Args:
-            analytics_engine: SQLAlchemy engine for the analytics database.
-        """
-        with analytics_engine.begin() as conn:
-            conn.exec_driver_sql(CREATE_ACCOUNTS_DIM_SQL)
+        filtered = []
+        for account in accounts:
+            name = account.name if isinstance(account.name, str) else ""
+            if is_valid_account_name(name):
+                filtered.append(account)
+        filtered = sorted(filtered, key=lambda row: row.guid)
+        filtered_count = len(accounts) - len(filtered)
+        if filtered_count:
+            self._logger.warning(
+                f"Filtered out {filtered_count} accounts with invalid names"
+            )
+        return filtered
 
 
 __all__ = ["SyncAccountsUseCase", "SyncAccountsResult"]
