@@ -11,6 +11,7 @@ from src.application.use_cases.get_accounts import (
     AccountDTO,
     GetAccountsUseCase,
 )
+from src.application.use_cases.get_accounts_tree import GetAccountsTreeUseCase
 from src.application.use_cases.get_account_balances import (
     AccountBalanceDTO,
     GetAccountBalancesUseCase,
@@ -18,6 +19,10 @@ from src.application.use_cases.get_account_balances import (
 from src.application.use_cases.get_cashflow import (
     CashflowView,
     GetCashflowUseCase,
+)
+from src.application.use_cases.sync_gnucash_analytics import (
+    SyncGnuCashAnalyticsResult,
+    SyncGnuCashAnalyticsUseCase,
 )
 from src.application.use_cases.get_net_worth_summary import (
     GetNetWorthSummaryUseCase,
@@ -28,7 +33,9 @@ from src.application.use_cases.get_asset_category_breakdown import (
     GetAssetCategoryBreakdownUseCase,
 )
 from src.infrastructure.container import (
+    build_database_adapter,
     build_accounts_repository,
+    build_accounts_tree_repository,
     build_analytics_repository,
 )
 from src.infrastructure.logging.logger import get_app_logger
@@ -46,11 +53,24 @@ def _fetch_accounts() -> Sequence[AccountDTO]:
     use_case = GetAccountsUseCase(repository=repository)
     return use_case.execute()
 
+def _fetch_accounts_tree() -> Sequence[AccountDTO]:
+    """Fetch full accounts hierarchy from the analytics mirror."""
+    repository = build_accounts_tree_repository()
+    use_case = GetAccountsTreeUseCase(repository=repository)
+    return use_case.execute()
+
 
 @st.cache_data(show_spinner=False)
-def _load_accounts() -> Sequence[AccountDTO]:
+def _load_accounts(schema_version: int = 1) -> Sequence[AccountDTO]:
     """Cached wrapper around _fetch_accounts for Streamlit sessions."""
+    _ = schema_version
     return _fetch_accounts()
+
+@st.cache_data(show_spinner=False)
+def _load_accounts_tree(schema_version: int = 1) -> Sequence[AccountDTO]:
+    """Cached wrapper around _fetch_accounts_tree for Streamlit sessions."""
+    _ = schema_version
+    return _fetch_accounts_tree()
 
 
 def _fetch_net_worth_summary(
@@ -127,6 +147,7 @@ def _load_asset_category_breakdown(
 def _fetch_cashflow_view(
     start_date: date | None,
     end_date: date | None,
+    asset_account_guids: tuple[str, ...] | None = None,
 ) -> CashflowView:
     """Fetch cashflow view using the analytics database."""
     repository = build_analytics_repository()
@@ -135,6 +156,9 @@ def _fetch_cashflow_view(
         start_date=start_date,
         end_date=end_date,
         target_currency="EUR",
+        asset_account_guids=list(asset_account_guids)
+        if asset_account_guids is not None
+        else None,
     )
 
 
@@ -142,11 +166,138 @@ def _fetch_cashflow_view(
 def _load_cashflow_view(
     start_date: date | None,
     end_date: date | None,
+    asset_account_guids: tuple[str, ...] | None = None,
     schema_version: int = 1,
 ) -> CashflowView:
     """Cached wrapper around _fetch_cashflow_view."""
     _ = schema_version
-    return _fetch_cashflow_view(start_date, end_date)
+    return _fetch_cashflow_view(start_date, end_date, asset_account_guids)
+
+
+def _build_account_full_names(
+    accounts: Sequence[AccountDTO],
+) -> dict[str, str]:
+    """Build account full names from (name, parent_guid) relationships.
+
+    Args:
+        accounts: Flat account list from analytics.
+
+    Returns:
+        Map of account GUID -> full name (e.g., "Actif:Banque:Courant").
+    """
+    accounts_by_guid = {account.guid: account for account in accounts}
+    full_name_by_guid: dict[str, str] = {}
+
+    for account in accounts:
+        parts: list[str] = []
+        cursor: AccountDTO | None = account
+        seen: set[str] = set()
+        while cursor is not None and cursor.guid not in seen:
+            seen.add(cursor.guid)
+            parts.append(cursor.name)
+            cursor = (
+                accounts_by_guid.get(cursor.parent_guid)
+                if cursor.parent_guid
+                else None
+            )
+        full_name_by_guid[account.guid] = ":".join(reversed(parts))
+    return full_name_by_guid
+
+
+def _asset_account_candidates(
+    accounts: Sequence[AccountDTO],
+    *,
+    asset_root_name: str,
+) -> tuple[list[str], dict[str, str]]:
+    """Return selectable asset accounts under a given root name.
+
+    Args:
+        accounts: Flat account list from analytics.
+        asset_root_name: Root account name identifying assets ("Actif").
+
+    Returns:
+        Tuple of (sorted asset guids, guid->full_name).
+    """
+    accounts_by_guid = {account.guid: account for account in accounts}
+    full_name_by_guid = _build_account_full_names(accounts)
+    root_guids = {account.guid for account in accounts if account.name == asset_root_name}
+
+    def is_descendant_of_asset_root(account: AccountDTO) -> bool:
+        cursor = account
+        seen: set[str] = set()
+        while cursor.guid not in seen:
+            seen.add(cursor.guid)
+            if cursor.guid in root_guids:
+                return True
+            if not cursor.parent_guid:
+                return False
+            parent = accounts_by_guid.get(cursor.parent_guid)
+            if parent is None:
+                return False
+            cursor = parent
+        return False
+
+    display_name_by_guid: dict[str, str] = {}
+    candidate_guids: list[str] = []
+    for account in accounts:
+        if account.guid in root_guids:
+            continue
+        if not is_descendant_of_asset_root(account):
+            continue
+        candidate_guids.append(account.guid)
+        parts = full_name_by_guid.get(account.guid, account.name).split(":")
+        if asset_root_name in parts:
+            idx = parts.index(asset_root_name)
+            display_name_by_guid[account.guid] = ":".join(parts[idx:])
+        else:
+            display_name_by_guid[account.guid] = full_name_by_guid.get(
+                account.guid, account.name
+            )
+
+    candidate_guids.sort(
+        key=lambda guid: (display_name_by_guid.get(guid, ""), guid)
+    )
+    return candidate_guids, display_name_by_guid
+
+
+def _default_selected_asset_guids(
+    asset_candidates: list[str],
+    display_name_by_guid: dict[str, str],
+    *,
+    asset_root_name: str,
+) -> list[str]:
+    """Return default selected asset accounts for cashflow.
+
+    By default, we exclude the "Créances" subtree (and its children) to avoid
+    mixing receivables into cashflow sources.
+
+    Args:
+        asset_candidates: Asset account GUIDs eligible for selection.
+        display_name_by_guid: Mapping guid -> display name (e.g. "Actif:Banque").
+        asset_root_name: Root account name ("Actif").
+
+    Returns:
+        List of GUIDs to preselect.
+    """
+    excluded_prefix = f"{asset_root_name}:Créances"
+    selected: list[str] = []
+    for guid in asset_candidates:
+        name = display_name_by_guid.get(guid, guid)
+        if name == excluded_prefix or name.startswith(f"{excluded_prefix}:"):
+            continue
+        selected.append(guid)
+    return selected
+
+
+def _sync_gnucash_analytics() -> SyncGnuCashAnalyticsResult:
+    """Synchronize GnuCash tables into the analytics database.
+
+    Returns:
+        SyncGnuCashAnalyticsResult: Row counts per synced table.
+    """
+    db_port = build_database_adapter()
+    use_case = SyncGnuCashAnalyticsUseCase(db_port=db_port)
+    return use_case.run()
 
 
 def _format_currency(value: Decimal, currency_code: str) -> str:
@@ -739,20 +890,56 @@ def main() -> None:
     st.set_page_config(page_title="GnuCash Dashboard", layout="wide")
     st.title("GnuCash Dashboard")
 
+    if "analytics_schema_version" not in st.session_state:
+        st.session_state["analytics_schema_version"] = 1
+    analytics_schema_version = int(st.session_state["analytics_schema_version"])
+
     page = st.sidebar.radio(
         "Page",
         ["Dashboard", "Accounts", "Flux de trésorerie", "Budget"],
     )
 
     if page == "Dashboard":
+        action_col, _ = st.columns([1, 3])
+        with action_col:
+            if st.button(
+                "Mettre à jour la base analytics",
+                help="Synchronise les tables GnuCash vers la base analytics "
+                "puis invalide les caches Streamlit.",
+                type="primary",
+            ):
+                with st.spinner("Synchronisation analytics en cours…"):
+                    result = _sync_gnucash_analytics()
+                st.session_state["analytics_schema_version"] = (
+                    analytics_schema_version + 1
+                )
+                st.session_state.pop("cashflow_sankey_signature", None)
+                st.session_state.pop("cashflow_sankey_model", None)
+                st.session_state.pop("cashflow_sankey_fig", None)
+                if hasattr(st.cache_data, "clear"):
+                    st.cache_data.clear()
+                st.success(
+                    "Analytics mise à jour "
+                    f"(accounts={result.accounts_count}, "
+                    f"commodities={result.commodities_count}, "
+                    f"splits={result.splits_count}, "
+                    f"transactions={result.transactions_count}, "
+                    f"prices={result.prices_count})."
+                )
+                st.rerun()
+
         today = date.today()
         start_date, end_date = _get_date_inputs(today, key_prefix="dashboard")
         baseline_end = start_date - timedelta(days=1)
 
-        summary = _load_net_worth_summary(None, end_date, schema_version=2)
+        summary = _load_net_worth_summary(
+            None, end_date, schema_version=analytics_schema_version
+        )
         currency_code = getattr(summary, "currency_code", "EUR")
         baseline_summary = (
-            _load_net_worth_summary(None, baseline_end, schema_version=2)
+            _load_net_worth_summary(
+                None, baseline_end, schema_version=analytics_schema_version
+            )
             if baseline_end
             else _zero_summary(currency_code)
         )
@@ -796,12 +983,12 @@ def main() -> None:
         breakdown_level_1 = _load_asset_category_breakdown(
             end_date,
             level=1,
-            schema_version=2,
+            schema_version=analytics_schema_version,
         )
         breakdown_level_2 = _load_asset_category_breakdown(
             end_date,
             level=2,
-            schema_version=2,
+            schema_version=analytics_schema_version,
         )
         deps_ok, deps_error = _check_altair_dependencies()
         if not deps_ok:
@@ -866,11 +1053,11 @@ def main() -> None:
         account_balances = _load_account_balances(
             end_date=end_date,
             target_currency=currency_code,
-            schema_version=2,
+            schema_version=analytics_schema_version,
         )
         _render_account_tree(account_balances, currency_code)
     elif page == "Accounts":
-        accounts = _load_accounts()
+        accounts = _load_accounts(schema_version=analytics_schema_version)
         st.caption(f"{len(accounts)} accounts synced "
                    f"from analytics.accounts_dim")
         if not accounts:
@@ -880,10 +1067,209 @@ def main() -> None:
     elif page == "Flux de trésorerie":
         today = date.today()
         start_date, end_date = _get_date_inputs(today, key_prefix="cashflow")
+        selection_key = "cashflow_selected_asset_guids"
+        with st.expander("Sélection des comptes Actifs", expanded=False):
+            asset_root_key = "cashflow_asset_root_name"
+            asset_root_name = st.text_input(
+                "Racine des comptes Actifs",
+                key=asset_root_key,
+                value="Actif",
+                help="Doit correspondre au nom du compte racine (ex: Actif).",
+            ).strip() or "Actif"
+
+            accounts_tree = _load_accounts_tree(
+                schema_version=analytics_schema_version
+            )
+            if not accounts_tree:
+                st.warning(
+                    "Aucun compte disponible dans la table analytics.accounts. "
+                    "Lance la mise à jour analytics puis réessaie."
+                )
+                return
+            asset_candidates, display_name_by_guid = _asset_account_candidates(
+                accounts_tree,
+                asset_root_name=asset_root_name,
+            )
+            if not asset_candidates:
+                st.warning(
+                    f"Aucun compte trouvé sous la racine « {asset_root_name} ». "
+                    "Vérifie le nom (ou lance la mise à jour analytics)."
+                )
+                return
+
+            asset_candidate_set = set(asset_candidates)
+            if selection_key not in st.session_state:
+                st.session_state[selection_key] = _default_selected_asset_guids(
+                    asset_candidates,
+                    display_name_by_guid,
+                    asset_root_name=asset_root_name,
+                )
+            else:
+                current = [
+                    guid
+                    for guid in st.session_state[selection_key]
+                    if guid in asset_candidate_set
+                ]
+                if len(current) != len(st.session_state[selection_key]):
+                    st.session_state[selection_key] = current
+
+            actions = st.columns([1, 1, 3])
+            if actions[0].button(
+                "Tout sélectionner",
+                key="cashflow_assets_select_all",
+                disabled=not asset_candidates,
+            ):
+                st.session_state[selection_key] = list(asset_candidates)
+                st.session_state.pop("cashflow_sankey_signature", None)
+                st.session_state.pop("cashflow_sankey_model", None)
+                st.session_state.pop("cashflow_sankey_fig", None)
+                st.rerun()
+            if actions[1].button(
+                "Tout désélectionner",
+                key="cashflow_assets_select_none",
+                disabled=not bool(st.session_state[selection_key]),
+            ):
+                st.session_state[selection_key] = []
+                st.session_state.pop("cashflow_sankey_signature", None)
+                st.session_state.pop("cashflow_sankey_model", None)
+                st.session_state.pop("cashflow_sankey_fig", None)
+                st.rerun()
+
+            st.markdown("#### Comptes Actifs utilisés")
+            selected_guids: list[str] = list(st.session_state[selection_key])
+            selected_set = set(selected_guids)
+
+            left_panel, right_panel = st.columns(2)
+            with left_panel:
+                st.caption(
+                    f"Disponibles: {len(asset_candidates) - len(selected_guids)}"
+                )
+                available_query = st.text_input(
+                    "Filtrer (disponibles)",
+                    value="",
+                    key="cashflow_assets_filter_available",
+                ).strip().lower()
+                available_guids = [
+                    guid
+                    for guid in asset_candidates
+                    if guid not in selected_set
+                    and (
+                        not available_query
+                        or available_query
+                        in display_name_by_guid.get(guid, guid).lower()
+                    )
+                ]
+                available_labels = [
+                    display_name_by_guid.get(guid, guid)
+                    for guid in available_guids
+                ]
+                available_choice = st.selectbox(
+                    "Compte à ajouter",
+                    options=["—"] + available_labels,
+                    index=0,
+                    key="cashflow_assets_available_choice",
+                )
+                add_cols = st.columns([1, 1])
+                if add_cols[0].button(
+                    "Ajouter",
+                    key="cashflow_assets_add_one",
+                    disabled=available_choice == "—",
+                ):
+                    guid_to_add = available_guids[
+                        available_labels.index(available_choice)
+                    ]
+                    st.session_state[selection_key] = [
+                        *selected_guids,
+                        guid_to_add,
+                    ]
+                    st.session_state.pop("cashflow_sankey_signature", None)
+                    st.session_state.pop("cashflow_sankey_model", None)
+                    st.session_state.pop("cashflow_sankey_fig", None)
+                    st.rerun()
+                if add_cols[1].button(
+                    "Ajouter tout (filtré)",
+                    key="cashflow_assets_add_all_filtered",
+                    disabled=not available_guids,
+                ):
+                    st.session_state[selection_key] = [
+                        *selected_guids,
+                        *available_guids,
+                    ]
+                    st.session_state.pop("cashflow_sankey_signature", None)
+                    st.session_state.pop("cashflow_sankey_model", None)
+                    st.session_state.pop("cashflow_sankey_fig", None)
+                    st.rerun()
+
+            with right_panel:
+                st.caption(f"Sélectionnés: {len(selected_guids)}")
+                selected_query = st.text_input(
+                    "Filtrer (sélectionnés)",
+                    value="",
+                    key="cashflow_assets_filter_selected",
+                ).strip().lower()
+                selected_filtered = [
+                    guid
+                    for guid in selected_guids
+                    if (
+                        not selected_query
+                        or selected_query
+                        in display_name_by_guid.get(guid, guid).lower()
+                    )
+                ]
+                selected_labels = [
+                    display_name_by_guid.get(guid, guid)
+                    for guid in selected_filtered
+                ]
+                selected_choice = st.selectbox(
+                    "Compte à retirer",
+                    options=["—"] + selected_labels,
+                    index=0,
+                    key="cashflow_assets_selected_choice",
+                )
+                remove_cols = st.columns([1, 1])
+                if remove_cols[0].button(
+                    "Retirer",
+                    key="cashflow_assets_remove_one",
+                    disabled=selected_choice == "—",
+                ):
+                    guid_to_remove = selected_filtered[
+                        selected_labels.index(selected_choice)
+                    ]
+                    st.session_state[selection_key] = [
+                        guid
+                        for guid in selected_guids
+                        if guid != guid_to_remove
+                    ]
+                    st.session_state.pop("cashflow_sankey_signature", None)
+                    st.session_state.pop("cashflow_sankey_model", None)
+                    st.session_state.pop("cashflow_sankey_fig", None)
+                    st.rerun()
+                if remove_cols[1].button(
+                    "Retirer tout (filtré)",
+                    key="cashflow_assets_remove_all_filtered",
+                    disabled=not selected_filtered,
+                ):
+                    remove_set = set(selected_filtered)
+                    st.session_state[selection_key] = [
+                        guid
+                        for guid in selected_guids
+                        if guid not in remove_set
+                    ]
+                    st.session_state.pop("cashflow_sankey_signature", None)
+                    st.session_state.pop("cashflow_sankey_model", None)
+                    st.session_state.pop("cashflow_sankey_fig", None)
+                    st.rerun()
+
+        selected_asset_guids: tuple[str, ...] = tuple(st.session_state[selection_key])
+        if not selected_asset_guids:
+            st.info("Aucun compte Actif sélectionné : aucun flux à afficher.")
+            return
+
         view = _load_cashflow_view(
             start_date,
             end_date,
-            schema_version=1,
+            asset_account_guids=selected_asset_guids,
+            schema_version=analytics_schema_version,
         )
         st.subheader("Synthèse")
         _render_cashflow_summary(view)
@@ -912,6 +1298,7 @@ def main() -> None:
             desired_signature = (
                 start_date,
                 end_date,
+                selected_asset_guids,
                 sankey_state.allow_negative_diff,
             )
             signature_key = "cashflow_sankey_signature"

@@ -38,6 +38,7 @@ class GetCashflowUseCase:
         start_date: date | None = None,
         end_date: date | None = None,
         target_currency: str = "EUR",
+        asset_account_guids: list[str] | None = None,
     ) -> CashflowView:
         """Return cashflow totals and details for the period.
 
@@ -45,6 +46,9 @@ class GetCashflowUseCase:
             start_date: Optional lower bound for transaction post dates.
             end_date: Optional upper bound for transaction post dates.
             target_currency: Currency code to filter cashflow rows.
+            asset_account_guids: Optional list of asset account GUIDs to use as
+                cash source accounts. When omitted, all accounts under
+                ``asset_root_name`` are used.
 
         Returns:
             CashflowView: Summary totals and detailed inflow/outflow items.
@@ -57,6 +61,7 @@ class GetCashflowUseCase:
             end_date,
             asset_root_name=self._asset_root_name,
             currency_guid=currency_guid,
+            asset_account_guids=asset_account_guids,
         )
         self._logger.info(
             f"Fetched {len(rows)} cashflow rows for {target_currency}"

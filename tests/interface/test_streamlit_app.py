@@ -125,6 +125,7 @@ class _FakeStreamlit:
         self.warning_called = False
         self.dataframe_payload = None
         self.sidebar = _FakeSidebar()
+        self.session_state: dict[str, object] = {}
 
     def set_page_config(self, **kwargs):
         self.config_called = True
@@ -162,6 +163,43 @@ class _FakeStreamlit:
 
         return decorator
 
+    def text_input(self, _label: str, value: str = "", key: str | None = None, **_kwargs):
+        if key:
+            self.session_state[key] = self.session_state.get(key, value)
+            return self.session_state[key]
+        return value
+
+    def multiselect(self, _label: str, options, default=None, format_func=None):
+        _ = format_func
+        return list(default or [])
+
+    def form(self, _key: str, clear_on_submit: bool = False):
+        _ = clear_on_submit
+        class _Form:
+            def __enter__(self):
+                return None
+
+            def __exit__(self, _exc_type, _exc, _tb):
+                return False
+
+        return _Form()
+
+    def form_submit_button(self, _label: str):
+        return False
+
+    def spinner(self, _text: str):
+        class _Spinner:
+            def __enter__(self):
+                return None
+
+            def __exit__(self, _exc_type, _exc, _tb):
+                return False
+
+        return _Spinner()
+
+    def rerun(self):
+        return None
+
 
 class _FakeSidebar:
     def __init__(self) -> None:
@@ -172,6 +210,15 @@ class _FakeSidebar:
 
     def selectbox(self, _label: str, options):
         return self.selectbox_value
+
+    def button(self, _label: str, **_kwargs):
+        return False
+
+    def markdown(self, _text: str):
+        return None
+
+    def success(self, _text: str):
+        return None
 
 
 class _FakeMetricColumn:
@@ -196,7 +243,7 @@ def test_main_displays_accounts(monkeypatch):
 
     fake_st.sidebar.selectbox_value = "Accounts"
     monkeypatch.setattr(app, "st", fake_st)
-    monkeypatch.setattr(app, "_load_accounts", lambda: accounts)
+    monkeypatch.setattr(app, "_load_accounts", lambda **_kwargs: accounts)
     monkeypatch.setattr(
         app,
         "_load_net_worth_summary",
@@ -224,7 +271,7 @@ def test_main_warns_when_no_accounts(monkeypatch):
     fake_st = _FakeStreamlit()
     fake_st.sidebar.selectbox_value = "Accounts"
     monkeypatch.setattr(app, "st", fake_st)
-    monkeypatch.setattr(app, "_load_accounts", lambda: [])
+    monkeypatch.setattr(app, "_load_accounts", lambda **_kwargs: [])
     monkeypatch.setattr(
         app,
         "_load_net_worth_summary",
