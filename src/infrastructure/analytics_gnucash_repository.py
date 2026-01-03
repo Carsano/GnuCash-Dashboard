@@ -397,7 +397,11 @@ class AnalyticsGnuCashRepository(GnuCashRepositoryPort):
             JOIN accounts a ON a.guid = s.account_guid
             JOIN account_tree at ON at.guid = a.guid
             JOIN commodities c ON c.guid = a.commodity_guid
-            WHERE a.guid NOT IN (SELECT guid FROM asset_accounts)
+            WHERE NOT EXISTS (
+                  SELECT 1
+                  FROM asset_accounts aa
+                  WHERE aa.guid = a.guid
+              )
               AND c.guid = :currency_guid
         ),
         cashflow_aggregates AS (
