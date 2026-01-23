@@ -1,12 +1,18 @@
-"""Tests for the Streamlit app module."""
+"""Tests for the Streamlit wiring layer.
+
+The entry-point `app.py` is intentionally thin: it configures Streamlit and
+delegates rendering to page modules. Cached data loaders live in `shared.py`.
+"""
+
+from __future__ import annotations
 
 from types import SimpleNamespace
 
-from src.adapters.interface.streamlit import app
+from src.adapters.interface.streamlit import app, shared
 
 
-def test_fetch_accounts_invokes_use_case(monkeypatch):
-    """_fetch_accounts should instantiate the adapter and use case."""
+def test_fetch_accounts_invokes_use_case(monkeypatch) -> None:
+    """_fetch_accounts should instantiate the repository + use case."""
     fake_accounts = ["a"]
 
     class _FakeUseCase:
@@ -16,32 +22,27 @@ def test_fetch_accounts_invokes_use_case(monkeypatch):
         def execute(self):
             return fake_accounts
 
+    monkeypatch.setattr(shared, "build_accounts_repository", lambda: "repository")
     monkeypatch.setattr(
-        app,
-        "build_accounts_repository",
-        lambda: "repository",
-    )
-    monkeypatch.setattr(
-        app,
+        shared,
         "GetAccountsUseCase",
         lambda repository: _FakeUseCase(repository),
     )
 
-    result = app._fetch_accounts()
-
+    result = shared._fetch_accounts()
     assert result == fake_accounts
 
 
-def test_load_accounts_uses_fetch(monkeypatch):
+def test_load_accounts_delegates_to_fetch(monkeypatch) -> None:
     """The cached loader should delegate to _fetch_accounts."""
     fake_accounts = ["cached"]
-    monkeypatch.setattr(app, "_fetch_accounts", lambda: fake_accounts)
-    result = app._load_accounts()
+    monkeypatch.setattr(shared, "_fetch_accounts", lambda: fake_accounts)
+    result = shared.load_accounts(schema_version=999)
     assert result == fake_accounts
 
 
-def test_fetch_net_worth_summary_invokes_use_case(monkeypatch):
-    """_fetch_net_worth_summary should instantiate the adapter and use case."""
+def test_fetch_net_worth_summary_invokes_use_case(monkeypatch) -> None:
+    """_fetch_net_worth_summary should instantiate the repository + use case."""
     fake_summary = SimpleNamespace(
         asset_total=1,
         liability_total=2,
@@ -56,24 +57,19 @@ def test_fetch_net_worth_summary_invokes_use_case(monkeypatch):
         def execute(self, start_date=None, end_date=None):
             return fake_summary
 
+    monkeypatch.setattr(shared, "build_analytics_repository", lambda: "repository")
     monkeypatch.setattr(
-        app,
-        "build_analytics_repository",
-        lambda: "repository",
-    )
-    monkeypatch.setattr(
-        app,
+        shared,
         "GetNetWorthSummaryUseCase",
         lambda gnucash_repository: _FakeUseCase(gnucash_repository),
     )
 
-    result = app._fetch_net_worth_summary(start_date=None, end_date=None)
-
+    result = shared._fetch_net_worth_summary(start_date=None, end_date=None)
     assert result == fake_summary
 
 
-def test_fetch_account_balances_invokes_use_case(monkeypatch):
-    """_fetch_account_balances should instantiate the adapter and use case."""
+def test_fetch_account_balances_invokes_use_case(monkeypatch) -> None:
+    """_fetch_account_balances should instantiate the repository + use case."""
     fake_balances = ["balance"]
 
     class _FakeUseCase:
@@ -83,206 +79,95 @@ def test_fetch_account_balances_invokes_use_case(monkeypatch):
         def execute(self, end_date=None, target_currency="EUR"):
             return fake_balances
 
+    monkeypatch.setattr(shared, "build_analytics_repository", lambda: "repository")
     monkeypatch.setattr(
-        app,
-        "build_analytics_repository",
-        lambda: "repository",
-    )
-    monkeypatch.setattr(
-        app,
+        shared,
         "GetAccountBalancesUseCase",
         lambda gnucash_repository: _FakeUseCase(gnucash_repository),
     )
 
-    result = app._fetch_account_balances(
-        end_date=None,
-        target_currency="EUR",
-    )
-
+    result = shared._fetch_account_balances(end_date=None, target_currency="EUR")
     assert result == fake_balances
 
 
-def test_load_account_balances_uses_fetch(monkeypatch):
+def test_load_account_balances_delegates_to_fetch(monkeypatch) -> None:
     """The cached loader should delegate to _fetch_account_balances."""
     fake_balances = ["cached"]
     monkeypatch.setattr(
-        app,
+        shared,
         "_fetch_account_balances",
         lambda end_date, target_currency: fake_balances,
     )
-    result = app._load_account_balances(
+    result = shared.load_account_balances(
         end_date=None,
         target_currency="EUR",
+        schema_version=999,
     )
     assert result == fake_balances
 
 
+class _FakeSidebar:
+    def __init__(self, selection: str) -> None:
+        self.selection = selection
+
+    def radio(self, _label: str, options):
+        _ = options
+        return self.selection
+
+
 class _FakeStreamlit:
-    def __init__(self) -> None:
-        self.config_called = False
-        self.title_called = False
-        self.captions: list[str] = []
-        self.warning_called = False
-        self.dataframe_payload = None
-        self.sidebar = _FakeSidebar()
+    def __init__(self, selection: str) -> None:
+        self.sidebar = _FakeSidebar(selection)
         self.session_state: dict[str, object] = {}
+        self.config_kwargs: dict[str, object] | None = None
+        self.title_text: str | None = None
 
     def set_page_config(self, **kwargs):
-        self.config_called = True
         self.config_kwargs = kwargs
 
     def title(self, text: str):
-        self.title_called = True
         self.title_text = text
 
-    def subheader(self, text: str):
-        self.subheader_text = text
 
-    def text_input(self, _label: str, placeholder: str = ""):
-        return ""
-
-    def selectbox(self, _label: str, options, index: int = 0):
-        return options[index]
-
-    def caption(self, text: str):
-        self.captions.append(text)
-
-    def warning(self, text: str):
-        self.warning_called = True
-        self.warning_text = text
-
-    def dataframe(self, data, **kwargs):
-        self.dataframe_payload = (data, kwargs)
-
-    def columns(self, spec):
-        return [_FakeMetricColumn(), _FakeMetricColumn(), _FakeMetricColumn()]
-
-    def cache_data(self, **_kwargs):
-        def decorator(func):
-            return func
-
-        return decorator
-
-    def text_input(self, _label: str, value: str = "", key: str | None = None, **_kwargs):
-        if key:
-            self.session_state[key] = self.session_state.get(key, value)
-            return self.session_state[key]
-        return value
-
-    def multiselect(self, _label: str, options, default=None, format_func=None):
-        _ = format_func
-        return list(default or [])
-
-    def form(self, _key: str, clear_on_submit: bool = False):
-        _ = clear_on_submit
-        class _Form:
-            def __enter__(self):
-                return None
-
-            def __exit__(self, _exc_type, _exc, _tb):
-                return False
-
-        return _Form()
-
-    def form_submit_button(self, _label: str):
-        return False
-
-    def spinner(self, _text: str):
-        class _Spinner:
-            def __enter__(self):
-                return None
-
-            def __exit__(self, _exc_type, _exc, _tb):
-                return False
-
-        return _Spinner()
-
-    def rerun(self):
-        return None
-
-
-class _FakeSidebar:
-    def __init__(self) -> None:
-        self.selectbox_value = "Accounts"
-
-    def radio(self, _label: str, options):
-        return self.selectbox_value
-
-    def selectbox(self, _label: str, options):
-        return self.selectbox_value
-
-    def button(self, _label: str, **_kwargs):
-        return False
-
-    def markdown(self, _text: str):
-        return None
-
-    def success(self, _text: str):
-        return None
-
-
-class _FakeMetricColumn:
-    def metric(self, label: str, value: str, delta: str | None = None):
-        self.label = label
-        self.value = value
-        self.delta = delta
-
-
-def test_main_displays_accounts(monkeypatch):
-    """main should render the dataframe when accounts exist."""
-    fake_st = _FakeStreamlit()
-    accounts = [
-        SimpleNamespace(
-            guid="1",
-            name="Checking",
-            account_type="BANK",
-            commodity_guid="USD",
-            parent_guid=None,
-        )
-    ]
-
-    fake_st.sidebar.selectbox_value = "Accounts"
+def test_main_delegates_to_accounts_page(monkeypatch) -> None:
+    """main should call Accounts page renderer when selected."""
+    fake_st = _FakeStreamlit("Accounts")
     monkeypatch.setattr(app, "st", fake_st)
-    monkeypatch.setattr(app, "_load_accounts", lambda **_kwargs: accounts)
+    called: dict[str, bool] = {"accounts": False}
+
     monkeypatch.setattr(
         app,
-        "_load_net_worth_summary",
-        lambda start_date, end_date: SimpleNamespace(
-            asset_total=1,
-            liability_total=2,
-            net_worth=3,
-            currency_code="EUR",
-        ),
+        "render_accounts_page",
+        lambda *, analytics_schema_version: called.__setitem__("accounts", True),
+    )
+    monkeypatch.setattr(app, "render_dashboard_page", lambda *, analytics_schema_version: None)
+    monkeypatch.setattr(app, "render_cashflow_page", lambda *, analytics_schema_version: None)
+    monkeypatch.setattr(app, "render_budget_page", lambda *, analytics_schema_version: None)
+    monkeypatch.setattr(app, "render_diagnostics_page", lambda *, analytics_schema_version: None)
+
+    app.main()
+
+    assert fake_st.config_kwargs == {"page_title": "GnuCash Dashboard", "layout": "wide"}
+    assert fake_st.title_text == "GnuCash Dashboard"
+    assert called["accounts"] is True
+
+
+def test_main_delegates_to_diagnostics_page(monkeypatch) -> None:
+    """main should call Diagnostics renderer when selected."""
+    fake_st = _FakeStreamlit("Diagnostics")
+    monkeypatch.setattr(app, "st", fake_st)
+    called: dict[str, bool] = {"diagnostics": False}
+
+    monkeypatch.setattr(app, "render_dashboard_page", lambda *, analytics_schema_version: None)
+    monkeypatch.setattr(app, "render_accounts_page", lambda *, analytics_schema_version: None)
+    monkeypatch.setattr(app, "render_cashflow_page", lambda *, analytics_schema_version: None)
+    monkeypatch.setattr(app, "render_budget_page", lambda *, analytics_schema_version: None)
+    monkeypatch.setattr(
+        app,
+        "render_diagnostics_page",
+        lambda *, analytics_schema_version: called.__setitem__("diagnostics", True),
     )
 
     app.main()
 
-    assert fake_st.config_called
-    assert fake_st.title_called
-    assert fake_st.warning_called is False
-    table_data, kwargs = fake_st.dataframe_payload
-    assert table_data[0]["Name"] == "Checking"
-    assert kwargs["width"] == "stretch"
-    assert kwargs["hide_index"] is True
-
-
-def test_main_warns_when_no_accounts(monkeypatch):
-    """main should warn the user when analytics has no data."""
-    fake_st = _FakeStreamlit()
-    fake_st.sidebar.selectbox_value = "Accounts"
-    monkeypatch.setattr(app, "st", fake_st)
-    monkeypatch.setattr(app, "_load_accounts", lambda **_kwargs: [])
-    monkeypatch.setattr(
-        app,
-        "_load_net_worth_summary",
-        lambda start_date, end_date: SimpleNamespace(
-            asset_total=1,
-            liability_total=2,
-            net_worth=3,
-            currency_code="EUR",
-        ),
-    )
-
-    app.main()
-
-    assert fake_st.warning_called
+    assert called["diagnostics"] is True

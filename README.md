@@ -43,7 +43,7 @@ GnuCash (PostgreSQL) -> Transformation job -> Analytics schema/views -> Streamli
 2. **Launch the Streamlit skeleton** (placeholder):
 
    ```bash
-   uv run streamlit run main.py
+   uv run python -m streamlit run src/adapters/interface/streamlit/app.py 
    ```
 
 3. **Configure PostgreSQL access**:

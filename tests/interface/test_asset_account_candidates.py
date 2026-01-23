@@ -1,7 +1,8 @@
 """Tests for asset account selection helpers in the Streamlit adapter."""
 
-from src.adapters.interface.streamlit.app import _asset_account_candidates
-from src.adapters.interface.streamlit.app import _default_selected_asset_guids
+from src.application.use_cases.get_cashflow_asset_selection import (
+    build_cashflow_asset_selection,
+)
 from src.domain.models.accounts import AccountDTO
 
 
@@ -36,22 +37,56 @@ def test_asset_account_candidates_detects_root_not_at_top_level():
             parent_guid="assets",
         ),
     ]
-    candidates, labels = _asset_account_candidates(accounts, asset_root_name="Actif")
-    assert candidates == ["bank", "cash"]
-    assert labels["bank"] == "Actif:Banque"
-    assert labels["cash"] == "Actif:Espèces"
+    selection = build_cashflow_asset_selection(accounts, asset_root_name="Actif")
+    assert list(selection.candidate_guids) == ["bank", "cash"]
+    assert selection.display_name_by_guid["bank"] == "Actif:Banque"
+    assert selection.display_name_by_guid["cash"] == "Actif:Espèces"
 
 
-def test_default_selected_asset_guids_excludes_receivables_subtree():
-    asset_candidates = ["a", "b", "c"]
-    display = {
-        "a": "Actif:Banque",
-        "b": "Actif:Créances",
-        "c": "Actif:Créances:Client X",
-    }
-    selected = _default_selected_asset_guids(
-        asset_candidates,
-        display,
-        asset_root_name="Actif",
-    )
-    assert selected == ["a"]
+def test_default_selected_asset_guids_excludes_receivables_and_investments_subtrees():
+    accounts = [
+        AccountDTO(
+            guid="root",
+            name="Actif",
+            account_type="ASSET",
+            commodity_guid=None,
+            parent_guid=None,
+        ),
+        AccountDTO(
+            guid="a",
+            name="Banque",
+            account_type="ASSET",
+            commodity_guid=None,
+            parent_guid="root",
+        ),
+        AccountDTO(
+            guid="b",
+            name="Créances",
+            account_type="ASSET",
+            commodity_guid=None,
+            parent_guid="root",
+        ),
+        AccountDTO(
+            guid="c",
+            name="Client X",
+            account_type="ASSET",
+            commodity_guid=None,
+            parent_guid="b",
+        ),
+        AccountDTO(
+            guid="d",
+            name="Investissements",
+            account_type="ASSET",
+            commodity_guid=None,
+            parent_guid="root",
+        ),
+        AccountDTO(
+            guid="e",
+            name="ETF",
+            account_type="ASSET",
+            commodity_guid=None,
+            parent_guid="d",
+        ),
+    ]
+    selection = build_cashflow_asset_selection(accounts, asset_root_name="Actif")
+    assert list(selection.default_selected_guids) == ["a"]

@@ -9,5 +9,20 @@ wheels/
 .env
 logs/
 
+# Secrets / credentials (never commit)
+client_secret*.json
+*client_secret*.json
+credentials*.json
+*credentials*.json
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.der
+*token*.json
+*oauth*.json
+*service_account*.json
+
 # Virtual environments
 .venv

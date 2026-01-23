@@ -3,7 +3,7 @@
 import sys
 import types
 
-from src.adapters.interface.streamlit import app
+from src.adapters.interface.streamlit.page_renderers import dashboard
 
 
 def test_check_altair_dependencies_ok(monkeypatch) -> None:
@@ -13,7 +13,7 @@ def test_check_altair_dependencies_ok(monkeypatch) -> None:
     monkeypatch.setitem(sys.modules, "numpy", fake_numpy)
     monkeypatch.setitem(sys.modules, "pandas", fake_pandas)
 
-    ok, message = app._check_altair_dependencies()
+    ok, message = dashboard._check_altair_dependencies()
 
     assert ok is True
     assert message is None
@@ -28,7 +28,7 @@ def test_check_altair_dependencies_missing_numpy_ndarray(
     monkeypatch.setitem(sys.modules, "numpy", fake_numpy)
     monkeypatch.setitem(sys.modules, "pandas", fake_pandas)
 
-    ok, message = app._check_altair_dependencies()
+    ok, message = dashboard._check_altair_dependencies()
 
     assert ok is False
     assert message is not None
@@ -44,7 +44,7 @@ def test_check_altair_dependencies_missing_pandas_timestamp(
     monkeypatch.setitem(sys.modules, "numpy", fake_numpy)
     monkeypatch.setitem(sys.modules, "pandas", fake_pandas)
 
-    ok, message = app._check_altair_dependencies()
+    ok, message = dashboard._check_altair_dependencies()
 
     assert ok is False
     assert message is not None
