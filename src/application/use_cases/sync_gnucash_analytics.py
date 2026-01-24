@@ -74,6 +74,13 @@ class SyncGnuCashAnalyticsUseCase:
 
         with target_engine.begin() as conn:
             conn.exec_driver_sql(spec.create_sql)
+            if spec.name == "transactions":
+                self._ensure_column(
+                    conn,
+                    table_name="transactions",
+                    column_name="currency_guid",
+                    column_type="TEXT",
+                )
             self._truncate_table(conn, spec.name)
 
         total = 0
@@ -96,6 +103,47 @@ class SyncGnuCashAnalyticsUseCase:
             conn.exec_driver_sql(f"DELETE FROM {table_name}")
             return
         conn.exec_driver_sql(f"TRUNCATE TABLE {table_name}")
+
+    @staticmethod
+    def _ensure_column(
+        conn,
+        *,
+        table_name: str,
+        column_name: str,
+        column_type: str,
+    ) -> None:
+        dialect = conn.engine.dialect.name
+        if dialect == "sqlite":
+            columns = {
+                row[1]
+                for row in conn.exec_driver_sql(
+                    f"PRAGMA table_info({table_name})"
+                ).all()
+            }
+            if column_name in columns:
+                return
+            conn.exec_driver_sql(
+                f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}"
+            )
+            return
+
+        exists = conn.execute(
+            text(
+                """
+                SELECT 1
+                FROM information_schema.columns
+                WHERE table_name = :table_name
+                  AND column_name = :column_name
+                LIMIT 1
+                """
+            ),
+            {"table_name": table_name, "column_name": column_name},
+        ).first()
+        if exists:
+            return
+        conn.exec_driver_sql(
+            f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}"
+        )
 
 
 @dataclass(frozen=True)
@@ -214,23 +262,26 @@ _SYNC_SPECS = (
     SyncTableSpec(
         name="transactions",
         select_sql="""
-            SELECT guid, post_date
+            SELECT guid, post_date, currency_guid
             FROM transactions
         """,
         insert_sql="""
             INSERT INTO transactions (
                 guid,
-                post_date
+                post_date,
+                currency_guid
             )
             VALUES (
                 :guid,
-                :post_date
+                :post_date,
+                :currency_guid
             )
         """,
         create_sql="""
             CREATE TABLE IF NOT EXISTS transactions (
                 guid TEXT PRIMARY KEY,
-                post_date DATE
+                post_date DATE,
+                currency_guid TEXT
             )
         """,
     ),

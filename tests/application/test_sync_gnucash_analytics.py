@@ -90,7 +90,8 @@ def _seed_source_db(engine) -> None:
             """
             CREATE TABLE transactions (
                 guid TEXT PRIMARY KEY,
-                post_date DATE
+                post_date DATE,
+                currency_guid TEXT
             )
             """
         )
@@ -142,11 +143,11 @@ def _seed_source_db(engine) -> None:
         conn.execute(
             text(
                 """
-                INSERT INTO transactions (guid, post_date)
-                VALUES (:guid, :post_date)
+                INSERT INTO transactions (guid, post_date, currency_guid)
+                VALUES (:guid, :post_date, :currency_guid)
                 """
             ),
-            {"guid": "tx-1", "post_date": date(2024, 1, 1)},
+            {"guid": "tx-1", "post_date": date(2024, 1, 1), "currency_guid": "cur-1"},
         )
         conn.execute(
             text(

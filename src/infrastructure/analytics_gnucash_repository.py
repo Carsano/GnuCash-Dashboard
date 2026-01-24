@@ -27,6 +27,40 @@ class AnalyticsGnuCashRepository(GnuCashRepositoryPort):
         self._db_port = db_port
         # Small in-memory cache to avoid repeated commodity lookups.
         self._currency_guid_cache: dict[str, str] = {}
+        self._transactions_have_currency_guid: bool | None = None
+
+    def _transactions_have_currency_guid_column(self) -> bool:
+        if self._transactions_have_currency_guid is not None:
+            return self._transactions_have_currency_guid
+
+        engine = self._db_port.get_analytics_engine()
+        dialect = engine.dialect.name
+        has_column = False
+        with engine.connect() as conn:
+            if dialect == "sqlite":
+                columns = {
+                    row[1]
+                    for row in conn.exec_driver_sql(
+                        "PRAGMA table_info(transactions)"
+                    ).all()
+                }
+                has_column = "currency_guid" in columns
+            else:
+                result = conn.execute(
+                    text(
+                        """
+                        SELECT 1
+                        FROM information_schema.columns
+                        WHERE table_name = 'transactions'
+                          AND column_name = 'currency_guid'
+                        LIMIT 1
+                        """
+                    )
+                ).first()
+                has_column = bool(result)
+
+        self._transactions_have_currency_guid = has_column
+        return has_column
 
     def fetch_currency_guid(self, currency: str) -> str:
         """
@@ -158,6 +192,9 @@ class AnalyticsGnuCashRepository(GnuCashRepositoryPort):
             start_date,
             end_date,
             use_asset_account_guids=asset_account_guids is not None,
+            filter_on_transaction_currency_guid=(
+                self._transactions_have_currency_guid_column()
+            ),
         )
         params = self._build_date_params(start_date, end_date)
         params["asset_root"] = asset_root_name
@@ -349,6 +386,7 @@ class AnalyticsGnuCashRepository(GnuCashRepositoryPort):
         end_date: date | None,
         *,
         use_asset_account_guids: bool = False,
+        filter_on_transaction_currency_guid: bool = True,
     ):
         base_sql = """
         WITH RECURSIVE account_tree AS (
@@ -388,9 +426,12 @@ class AnalyticsGnuCashRepository(GnuCashRepositoryPort):
             FROM splits s
             JOIN asset_accounts aa ON aa.guid = s.account_guid
             JOIN transactions t ON t.guid = s.tx_guid
-            JOIN accounts a ON a.guid = s.account_guid
-            JOIN commodities c ON c.guid = a.commodity_guid
-            WHERE c.guid = :currency_guid
+        """
+        if filter_on_transaction_currency_guid:
+            base_sql += " WHERE t.currency_guid = :currency_guid"
+        else:
+            base_sql += " WHERE 1=1"
+        base_sql += """
         """
         if start_date:
             base_sql += " AND t.post_date >= :start_date"
@@ -403,21 +444,18 @@ class AnalyticsGnuCashRepository(GnuCashRepositoryPort):
                    at.full_name AS account_full_name,
                    at.top_name AS top_parent_name,
                    CASE
-                       WHEN c.namespace = 'CURRENCY'
-                           THEN -CAST(s.value_num AS NUMERIC) / NULLIF(s.value_denom, 0)
-                       ELSE -CAST(s.quantity_num AS NUMERIC) / NULLIF(s.quantity_denom, 0)
-                    END AS signed_amount
+                       WHEN s.value_num IS NULL THEN 0
+                       ELSE -CAST(s.value_num AS NUMERIC) / NULLIF(s.value_denom, 0)
+                   END AS signed_amount
             FROM splits s
             JOIN asset_transactions atx ON atx.tx_guid = s.tx_guid
             JOIN accounts a ON a.guid = s.account_guid
             JOIN account_tree at ON at.guid = a.guid
-            JOIN commodities c ON c.guid = a.commodity_guid
             WHERE NOT EXISTS (
                   SELECT 1
                   FROM asset_accounts aa
                   WHERE aa.guid = a.guid
               )
-              AND c.guid = :currency_guid
         ),
         cashflow_aggregates AS (
             SELECT account_guid,
