@@ -24,5 +24,9 @@ credentials*.json
 *oauth*.json
 *service_account*.json
 
+data/
+.uv-cache/
+.*/
+
 # Virtual environments
 .venv
