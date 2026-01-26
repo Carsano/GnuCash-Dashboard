@@ -7,4 +7,3 @@
 ## Notes
 
 - Other documentation locations (`documentation/`, `.github/`) were not detected at scan time.
-
