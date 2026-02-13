@@ -10,8 +10,10 @@ This module contains cross-page utilities:
 from __future__ import annotations
 
 from collections.abc import Sequence
+from collections.abc import Mapping
 from datetime import date
 from decimal import Decimal
+import os
 
 import streamlit as st
 
@@ -30,6 +32,13 @@ from src.application.use_cases.get_cashflow_asset_selection import (
     CashflowAssetSelection,
     GetCashflowAssetSelectionUseCase,
 )
+from src.application.use_cases.get_budget_applicability import (
+    GetBudgetApplicabilityUseCase,
+)
+from src.application.use_cases.get_budget_month_view import (
+    GetBudgetMonthViewUseCase,
+)
+from src.application.use_cases.get_budgets import GetBudgetsUseCase
 from src.application.use_cases.get_net_worth_summary import (
     GetNetWorthSummaryUseCase,
     NetWorthSummary,
@@ -38,10 +47,14 @@ from src.application.use_cases.sync_gnucash_analytics import (
     SyncGnuCashAnalyticsResult,
     SyncGnuCashAnalyticsUseCase,
 )
+from src.domain.models.budget import BudgetDTO
+from src.domain.models.budget import BudgetApplicabilityDTO
+from src.domain.models.budget import BudgetMonthViewDTO
 from src.infrastructure.container import (
     build_accounts_repository,
     build_accounts_tree_repository,
     build_analytics_repository,
+    build_budget_repository,
     build_database_adapter,
 )
 
@@ -82,6 +95,123 @@ def _fetch_accounts_tree() -> Sequence[AccountDTO]:
     repository = build_accounts_tree_repository()
     use_case = GetAccountsTreeUseCase(repository=repository)
     return use_case.execute()
+
+
+def _fetch_budgets() -> Sequence[BudgetDTO]:
+    """Fetch budgets using the configured backend."""
+    repository = build_budget_repository()
+    use_case = GetBudgetsUseCase(repository=repository)
+    return use_case.execute()
+
+
+def _fetch_budget_applicability(
+    *,
+    budget_guid: str,
+    month_start: date,
+) -> BudgetApplicabilityDTO:
+    """Fetch applicability for the selected budget and month."""
+
+    repository = build_budget_repository()
+    use_case = GetBudgetApplicabilityUseCase(repository=repository)
+    return use_case.execute(budget_guid=budget_guid, month_start=month_start)
+
+
+def _fetch_budget_month_view(
+    *,
+    budget_guid: str,
+    month_start: date,
+    node_paths: Mapping[str, str] | None = None,
+) -> BudgetMonthViewDTO:
+    """Fetch month summary + per-node budget view for selected context."""
+
+    repository = build_budget_repository()
+    use_case = GetBudgetMonthViewUseCase(repository=repository)
+    return use_case.execute(
+        budget_guid=budget_guid,
+        month_start=month_start,
+        node_paths=node_paths,
+    )
+
+
+@st.cache_data(show_spinner=False)
+def load_budgets(
+    schema_version: int = 1,
+    backend: str | None = None,
+) -> Sequence[BudgetDTO]:
+    """Load budgets and cache them for the Streamlit session.
+
+    Args:
+        schema_version: Cache-buster that increments after an analytics sync.
+        backend: Optional backend identifier used to scope the cache key.
+
+    Returns:
+        Deterministically ordered list of available budgets.
+    """
+    resolved_backend = (
+        backend
+        if backend is not None
+        else os.getenv("GNUCASH_BACKEND", "sqlalchemy")
+    ).strip().lower()
+    _ = (schema_version, resolved_backend)
+    return _fetch_budgets()
+
+
+@st.cache_data(show_spinner=False)
+def load_budget_applicability(
+    *,
+    schema_version: int = 1,
+    backend: str | None = None,
+    budget_guid: str,
+    month_start: date,
+) -> BudgetApplicabilityDTO:
+    """Load and cache the applicability for a selected budget/month context."""
+
+    normalized_month_start = date(month_start.year, month_start.month, 1)
+    resolved_backend = (
+        backend
+        if backend is not None
+        else os.getenv("GNUCASH_BACKEND", "sqlalchemy")
+    ).strip().lower()
+    _ = (schema_version, resolved_backend, budget_guid, normalized_month_start)
+    return _fetch_budget_applicability(
+        budget_guid=budget_guid,
+        month_start=normalized_month_start,
+    )
+
+
+@st.cache_data(show_spinner=False)
+def load_budget_month_view(
+    *,
+    schema_version: int = 1,
+    backend: str | None = None,
+    budget_guid: str,
+    month_start: date,
+    node_paths: Mapping[str, str] | None = None,
+) -> BudgetMonthViewDTO:
+    """Load and cache monthly budget results for selected budget/month."""
+
+    normalized_month_start = date(month_start.year, month_start.month, 1)
+    normalized_node_paths = dict(node_paths or {})
+    node_paths_cache_key = tuple(
+        sorted(normalized_node_paths.items())
+    )
+    resolved_backend = (
+        backend
+        if backend is not None
+        else os.getenv("GNUCASH_BACKEND", "sqlalchemy")
+    ).strip().lower()
+    _ = (
+        schema_version,
+        resolved_backend,
+        budget_guid,
+        normalized_month_start,
+        node_paths_cache_key,
+    )
+    return _fetch_budget_month_view(
+        budget_guid=budget_guid,
+        month_start=normalized_month_start,
+        node_paths=normalized_node_paths or None,
+    )
 
 
 @st.cache_data(show_spinner=False)

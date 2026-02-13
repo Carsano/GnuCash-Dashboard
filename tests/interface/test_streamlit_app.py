@@ -6,6 +6,7 @@ delegates rendering to page modules. Cached data loaders live in `shared.py`.
 
 from __future__ import annotations
 
+from datetime import date
 from types import SimpleNamespace
 
 from src.adapters.interface.streamlit import app, shared
@@ -39,6 +40,76 @@ def test_load_accounts_delegates_to_fetch(monkeypatch) -> None:
     monkeypatch.setattr(shared, "_fetch_accounts", lambda: fake_accounts)
     result = shared.load_accounts(schema_version=999)
     assert result == fake_accounts
+
+
+def test_fetch_budgets_invokes_use_case(monkeypatch) -> None:
+    """_fetch_budgets should instantiate the repository + use case."""
+    fake_budgets = ["b"]
+
+    class _FakeUseCase:
+        def __init__(self, repository):
+            self.repository = repository
+
+        def execute(self):
+            return fake_budgets
+
+    monkeypatch.setattr(shared, "build_budget_repository", lambda: "repository")
+    monkeypatch.setattr(
+        shared,
+        "GetBudgetsUseCase",
+        lambda repository: _FakeUseCase(repository),
+    )
+
+    result = shared._fetch_budgets()
+    assert result == fake_budgets
+
+
+def test_load_budgets_delegates_to_fetch(monkeypatch) -> None:
+    """The cached loader should delegate to _fetch_budgets."""
+    fake_budgets = ["cached"]
+    monkeypatch.setattr(shared, "_fetch_budgets", lambda: fake_budgets)
+    result = shared.load_budgets(schema_version=999)
+    assert result == fake_budgets
+
+
+def test_fetch_budget_month_view_invokes_use_case(monkeypatch) -> None:
+    """_fetch_budget_month_view should instantiate repository + use case."""
+    fake_view = SimpleNamespace(summary="summary", node_results=[])
+
+    class _FakeUseCase:
+        def __init__(self, repository):
+            self.repository = repository
+
+        def execute(self, *, budget_guid, month_start, node_paths=None):
+            assert budget_guid == "b1"
+            assert str(month_start) == "2026-02-01"
+            assert node_paths is None
+            return fake_view
+
+    monkeypatch.setattr(shared, "build_budget_repository", lambda: "repository")
+    monkeypatch.setattr(
+        shared,
+        "GetBudgetMonthViewUseCase",
+        lambda repository: _FakeUseCase(repository),
+    )
+
+    result = shared._fetch_budget_month_view(
+        budget_guid="b1",
+        month_start=date(2026, 2, 1),
+    )
+    assert result == fake_view
+
+
+def test_load_budget_month_view_delegates_to_fetch(monkeypatch) -> None:
+    """Cached loader should delegate to _fetch_budget_month_view."""
+    fake_view = SimpleNamespace(summary="summary", node_results=[])
+    monkeypatch.setattr(shared, "_fetch_budget_month_view", lambda **_: fake_view)
+    result = shared.load_budget_month_view(
+        schema_version=999,
+        budget_guid="b1",
+        month_start=date(2026, 2, 20),
+    )
+    assert result == fake_view
 
 
 def test_fetch_net_worth_summary_invokes_use_case(monkeypatch) -> None:

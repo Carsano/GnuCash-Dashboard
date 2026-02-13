@@ -11,6 +11,7 @@ from src.application.ports.accounts_tree_repository import (
     AccountsTreeRepositoryPort,
 )
 from src.application.ports.analytics_repository import AnalyticsRepositoryPort
+from src.application.ports.budget_repository import BudgetRepositoryPort
 from src.application.ports.database import DatabaseEnginePort
 from src.application.ports.gnucash_repository import GnuCashRepositoryPort
 from src.infrastructure.accounts_sync import (
@@ -29,6 +30,10 @@ from src.infrastructure.analytics_gnucash_repository import (
 )
 from src.infrastructure.analytics_views_repository import (
     AnalyticsViewsRepository,
+)
+from src.infrastructure.budget_repository import (
+    SqlAlchemyBudgetRepository,
+    UnsupportedBudgetRepository,
 )
 from src.infrastructure.db import SqlAlchemyDatabaseEngineAdapter
 from src.infrastructure.gnucash_repository_factory import (
@@ -109,6 +114,22 @@ def build_analytics_repository(
     return AnalyticsGnuCashRepository(resolved_db)
 
 
+def build_budget_repository(
+    db_port: DatabaseEnginePort | None = None,
+) -> BudgetRepositoryPort:
+    """Return the configured budget repository.
+
+    Notes:
+        - GnuCash budgets live in the source GnuCash schema for this project.
+        - The analytics mirror currently does not include budget tables.
+    """
+    settings = GnuCashSettings.from_env()
+    if settings.backend != "sqlalchemy":
+        return UnsupportedBudgetRepository(backend=settings.backend)
+    resolved_db = db_port or build_database_adapter()
+    return SqlAlchemyBudgetRepository(resolved_db)
+
+
 __all__ = [
     "build_database_adapter",
     "build_gnucash_repository",
@@ -117,4 +138,5 @@ __all__ = [
     "build_accounts_repository",
     "build_accounts_tree_repository",
     "build_analytics_repository",
+    "build_budget_repository",
 ]
