@@ -5,6 +5,7 @@ and concrete loggers for application and usage tracking.
 """
 
 import logging
+import re
 import sys
 from pathlib import Path
 from datetime import datetime
@@ -29,6 +30,32 @@ class LoggerConfig:
     file_prefix: str = "dashboard_logs"
     console: bool = True
     level: int = logging.INFO
+
+
+_PAYEE_MEMO_PATTERN = re.compile(
+    r"(?i)\b(payee|memo)\s*[:=]\s*(\"[^\"]*\"|'[^']*'|[^,\s;]+)"
+)
+_DB_URI_WITH_CREDS_PATTERN = re.compile(
+    r"(?i)\b([a-z][a-z0-9+.-]*://)([^/\s:@]+):([^@\s/]+)@"
+)
+_ABS_PATH_PATTERN = re.compile(
+    r"(?:(?:[A-Za-z]:\\|/)[^\s,;:'\"<>]+)"
+)
+_SQL_PARAM_PATTERN = re.compile(
+    r"(?i)\b(password|secret|token|api[_-]?key)\s*=\s*('[^']*'|\"[^\"]*\"|\S+)"
+)
+
+
+def redact_sensitive_text(text: str) -> str:
+    """Redact obvious sensitive values from log messages."""
+    if not text:
+        return text
+
+    redacted = _DB_URI_WITH_CREDS_PATTERN.sub(r"\1<redacted>:<redacted>@", text)
+    redacted = _PAYEE_MEMO_PATTERN.sub(r"\1=<redacted>", redacted)
+    redacted = _SQL_PARAM_PATTERN.sub(r"\1=<redacted>", redacted)
+    redacted = _ABS_PATH_PATTERN.sub("<redacted_path>", redacted)
+    return redacted
 
 
 class LoggerBuilder:
@@ -309,7 +336,7 @@ class Logger:
         Args:
             msg (str): The message to log.
         """
-        self.logger.info(msg)
+        self.logger.info(redact_sensitive_text(msg))
 
     def warning(self, msg: str):
         """Log a message with WARNING level.
@@ -317,7 +344,7 @@ class Logger:
         Args:
             msg (str): The message to log.
         """
-        self.logger.warning(msg)
+        self.logger.warning(redact_sensitive_text(msg))
 
     def error(self, msg: str):
         """Log a message with ERROR level.
@@ -325,7 +352,7 @@ class Logger:
         Args:
             msg (str): The message to log.
         """
-        self.logger.error(msg)
+        self.logger.error(redact_sensitive_text(msg))
 
     def debug(self, msg: str):
         """Log a message with DEBUG level.
@@ -333,7 +360,7 @@ class Logger:
         Args:
             msg (str): The message to log.
         """
-        self.logger.debug(msg)
+        self.logger.debug(redact_sensitive_text(msg))
 
     def critical(self, msg: str):
         """Log a message with CRITICAL level.
@@ -341,7 +368,7 @@ class Logger:
         Args:
             msg (str): The message to log.
         """
-        self.logger.critical(msg)
+        self.logger.critical(redact_sensitive_text(msg))
 
 
 class AppLogger(Logger):
@@ -419,6 +446,7 @@ def get_usage_logger():
 
 __all__ = [
     "Logger",
+    "redact_sensitive_text",
     "get_app_logger",
     "get_usage_logger"
 ]
