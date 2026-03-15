@@ -1,0 +1,12 @@
+{
+  "repository_type": "monolith",
+  "parts": [
+    {
+      "part_id": "main",
+      "root_path": ".",
+      "project_type_id": "backend"
+    }
+  ],
+  "integration_points": []
+}
+

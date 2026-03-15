@@ -7,6 +7,9 @@ from .get_cashflow import GetCashflowUseCase
 from .get_net_worth_summary import GetNetWorthSummaryUseCase
 from .get_asset_category_breakdown import GetAssetCategoryBreakdownUseCase
 from .compare_backends import CompareBackendsUseCase, BackendComparison
+from .get_budget_monthly_actuals import GetBudgetMonthlyActualsUseCase
+from .get_budget_monthly_targets import GetBudgetMonthlyTargetsUseCase
+from .get_budget_month_view import GetBudgetMonthViewUseCase
 from .sync_gnucash_analytics import (
     SyncGnuCashAnalyticsUseCase,
     SyncGnuCashAnalyticsResult,
@@ -38,6 +41,9 @@ __all__ = [
     "CashflowView",
     "CompareBackendsUseCase",
     "BackendComparison",
+    "GetBudgetMonthlyActualsUseCase",
+    "GetBudgetMonthlyTargetsUseCase",
+    "GetBudgetMonthViewUseCase",
     "SyncGnuCashAnalyticsUseCase",
     "SyncGnuCashAnalyticsResult",
 ]

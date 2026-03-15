@@ -1,0 +1,26 @@
+"""Security/privacy guardrails for Budget page implementation."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+
+def test_budget_page_has_no_external_http_endpoints_or_telemetry_hooks() -> None:
+    budget_page = (
+        Path(__file__).resolve().parents[2]
+        / "frontend"
+        / "src"
+        / "pages"
+        / "BudgetPage.tsx"
+    )
+    content = budget_page.read_text(encoding="utf-8")
+
+    forbidden_markers = (
+        "http://",
+        "https://",
+        "google-analytics",
+        "segment",
+        "mixpanel",
+        "sentry.io",
+    )
+    assert not any(marker in content for marker in forbidden_markers)

@@ -1,6 +1,6 @@
 """Helpers for Decimal normalization."""
 
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 
 
 def coerce_decimal(value) -> Decimal:
@@ -19,4 +19,11 @@ def coerce_decimal(value) -> Decimal:
     return Decimal(str(value))
 
 
-__all__ = ["coerce_decimal"]
+def quantize_currency(value: Decimal, *, places: int = 2) -> Decimal:
+    """Quantize a Decimal to currency precision using half-up rounding."""
+
+    exponent = Decimal("1").scaleb(-places)
+    return value.quantize(exponent, rounding=ROUND_HALF_UP)
+
+
+__all__ = ["coerce_decimal", "quantize_currency"]

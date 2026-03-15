@@ -114,3 +114,39 @@ def test_app_and_usage_loggers_share_builder_singletons(monkeypatch):
     assert usage_logger_1 is usage_logger_2
     assert isinstance(app_logger_1.logger, MagicMock)
     assert isinstance(usage_logger_1.logger, MagicMock)
+
+
+def test_redact_sensitive_text_masks_payee_memo_paths_and_db_credentials():
+    raw = (
+        "payee='John Doe' memo:'Rent' /Users/damien/secret.gnucash "
+        "postgresql://alice:s3cr3t@db.local:5432/gnucash "
+        "password='topsecret'"
+    )
+
+    redacted = logger_module.redact_sensitive_text(raw)
+
+    assert "John Doe" not in redacted
+    assert "Rent" not in redacted
+    assert "/Users/damien/secret.gnucash" not in redacted
+    assert "alice:s3cr3t@" not in redacted
+    assert "topsecret" not in redacted
+    assert "<redacted_path>" in redacted
+    assert "<redacted>" in redacted
+
+
+def test_logger_methods_apply_redaction_before_emitting(monkeypatch):
+    fake_logger = MagicMock()
+    monkeypatch.setattr(
+        logger_module.LoggerBuilder,
+        "build",
+        lambda self: fake_logger,
+    )
+    logger_module.Logger._instance = None
+
+    logger = logger_module.Logger("app")
+    logger.error("payee=Alice /tmp/book.gnucash password=123")
+
+    emitted = fake_logger.error.call_args[0][0]
+    assert "Alice" not in emitted
+    assert "/tmp/book.gnucash" not in emitted
+    assert "123" not in emitted

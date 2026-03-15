@@ -1,0 +1,76 @@
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  color: var(--text);
+  font-family: var(--sans);
+  line-height: 1.4;
+  background:
+    radial-gradient(900px 420px at 20% -10%, rgba(45, 127, 249, 0.13), transparent 50%),
+    radial-gradient(1200px 700px at 100% 0%, rgba(46, 204, 113, 0.08), transparent 52%),
+    var(--bg);
+}
+
+a {
+  color: inherit;
+}
+
+button,
+input,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+.focusable:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.page-enter {
+  animation: page-in var(--duration-medium) ease;
+}
+
+.stagger-in {
+  opacity: 0;
+  transform: translateY(8px);
+  animation: stagger-in var(--duration-medium) ease forwards;
+}
+
+.stagger-in:nth-child(2) {
+  animation-delay: 60ms;
+}
+
+.stagger-in:nth-child(3) {
+  animation-delay: 120ms;
+}
+
+.stagger-in:nth-child(4) {
+  animation-delay: 180ms;
+}
+
+@keyframes page-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes stagger-in {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

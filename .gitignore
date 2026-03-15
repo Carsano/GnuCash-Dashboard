@@ -30,3 +30,7 @@ data/
 
 # Virtual environments
 .venv
+
+# Others
+_bmad*/
+frontend/node_modules/
