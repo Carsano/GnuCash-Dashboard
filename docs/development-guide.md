@@ -7,11 +7,13 @@
 - PostgreSQL reachable for:
   - `GNUCASH_DB_URL` (source GnuCash DB/schema)
   - `ANALYTICS_DB_URL` (analytics DB/schema; can be the same DB)
+- `pnpm` (preferred) or `npm` for frontend commands
 
 ## Install
 
 ```bash
 uv sync
+cd frontend && pnpm install
 ```
 
 ## Configure Environment
@@ -24,10 +26,17 @@ Create `.env` (optional) with:
 - `ANALYTICS_READ_MODE=tables|views`
 - `PIECASH_FILE=/path/to/book.gnucash` (only for PieCash)
 
-## Run (Streamlit)
+## Run (API)
 
 ```bash
-uv run python -m streamlit run src/adapters/interface/streamlit/app.py
+uv run uvicorn src.adapters.interface.http_api.main:app --host 127.0.0.1 --port 8000 --reload
+```
+
+## Run (Frontend)
+
+```bash
+cd frontend
+pnpm dev
 ```
 
 ## Run (CLIs)
@@ -44,4 +53,3 @@ uv run python -m src.adapters.compare_backends_cli
 ```bash
 uv run pytest
 ```
-

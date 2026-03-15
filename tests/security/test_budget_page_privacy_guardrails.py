@@ -6,22 +6,18 @@ from pathlib import Path
 
 
 def test_budget_page_has_no_external_http_endpoints_or_telemetry_hooks() -> None:
-    budget_renderer = (
+    budget_page = (
         Path(__file__).resolve().parents[2]
+        / "frontend"
         / "src"
-        / "adapters"
-        / "interface"
-        / "streamlit"
-        / "page_renderers"
-        / "budget.py"
+        / "pages"
+        / "BudgetPage.tsx"
     )
-    content = budget_renderer.read_text(encoding="utf-8")
+    content = budget_page.read_text(encoding="utf-8")
 
     forbidden_markers = (
         "http://",
         "https://",
-        "fetch(",
-        "XMLHttpRequest",
         "google-analytics",
         "segment",
         "mixpanel",

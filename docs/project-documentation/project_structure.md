@@ -2,15 +2,17 @@
 
 ## Summary
 
-- **Repository type:** Monolith (single Python codebase)
+- **Repository type:** Monolith (single backend repo + colocated frontend)
 - **Primary language/runtime:** Python 3.11 (`pyproject.toml`)
-- **UI:** Streamlit adapter (`src/adapters/interface/streamlit/`)
+- **UI:** React frontend (`frontend/`)
+- **API:** FastAPI adapter (`src/adapters/interface/http_api/`)
 - **Persistence:** SQLAlchemy (<2.0) + Postgres drivers (`psycopg`, `psycopg2`)
 - **Architecture style:** Ports & adapters / hexagonal
 
 ## Top-Level Layout
 
-- `src/`: Application source code (layered architecture)
+- `src/`: Backend source code (layered architecture)
+- `frontend/`: React + TypeScript UI
 - `tests/`: Pytest test suite (unit + adapter/interface tests)
 - `migrations/`: Database migration assets (if any)
 - `logs/`: Runtime logs
@@ -19,8 +21,9 @@
 
 ## Code Layers (src/)
 
-- `src/adapters/`: Thin entry points (CLIs + Streamlit UI wiring)
-  - `src/adapters/interface/streamlit/app.py`: Streamlit app entry point
+- `src/adapters/`: Thin entry points (CLIs + HTTP API wiring)
+  - `src/adapters/interface/http_api/app.py`: FastAPI app factory
+  - `src/adapters/interface/http_api/router.py`: API routes
 - `src/application/`: Use cases and ports (application services)
   - `src/application/use_cases/`: Orchestrates domain + repositories, returns DTOs
   - `src/application/ports/`: Protocols for infrastructure dependencies
@@ -29,7 +32,8 @@
 
 ## How To Run
 
-- Streamlit app: `uv run python -m streamlit run src/adapters/interface/streamlit/app.py`
+- API: `uv run uvicorn src.adapters.interface.http_api.main:app --host 127.0.0.1 --port 8000 --reload`
+- Frontend: `cd frontend && pnpm dev`
 
 ## How To Test
 

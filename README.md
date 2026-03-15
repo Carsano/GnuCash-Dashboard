@@ -1,20 +1,20 @@
 # GnuCash Dashboard
 
-Dashboard Streamlit pour explorer un livre GnuCash avec une couche “analytics”.
+Dashboard local GnuCash avec backend FastAPI + frontend React.
 
 - Sources supportées : base GnuCash PostgreSQL (via SQLAlchemy) et/ou livre PieCash (optionnel).
 - Couche analytics : miroir (tables) et/ou vues SQL pré-calculées.
-- UI : Streamlit avec pages `Dashboard`, `Accounts`, `Flux de trésorerie`, `Budget`, `Diagnostics`.
+- UI : React (`/dashboard`, `/accounts`, `/cashflow`, `/diagnostics`, `/budget`)
 
 ## Architecture (hexagonale)
 
 ```
-adapters (CLI/Streamlit) -> application (use cases) -> ports -> infrastructure (DB/PieCash)
+adapters (CLI/HTTP API) -> application (use cases) -> ports -> infrastructure (DB/PieCash)
 ```
 
 - `src/application/use_cases/` : orchestration (sync, lecture analytics, comparaisons).
 - `src/infrastructure/` : accès DB (engines), backends GnuCash (SQLAlchemy / analytics / piecash).
-- `src/adapters/` : CLIs + UI Streamlit (sans logique métier).
+- `src/adapters/` : CLIs + API HTTP FastAPI (sans logique métier).
 
 ## Prérequis
 
@@ -41,11 +41,39 @@ Variables principales :
 - `ANALYTICS_READ_MODE` : `tables` (défaut) ou `views`
 - `PIECASH_FILE` (optionnel) : chemin `.gnucash` ou URI (ex: `postgresql://...`) pour PieCash
 
-## Lancer l’app Streamlit
+## Lancer l’API FastAPI (adapter HTTP v1)
 
 ```bash
-uv run python -m streamlit run src/adapters/interface/streamlit/app.py
+uv run uvicorn src.adapters.interface.http_api.main:app --host 127.0.0.1 --port 8000 --reload
 ```
+
+## Frontend React (Milestone 2 scaffold)
+
+Le frontend est dans `frontend/` (Vite + React + TypeScript), avec proxy dev vers `/api/v1/*`.
+
+```bash
+cd frontend
+pnpm install
+pnpm dev
+```
+
+Si `pnpm` n'est pas installé localement, utilisez temporairement :
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+## Demarrage en une commande (backend + frontend)
+
+```bash
+./scripts/dev-start.sh
+```
+
+Le script demarre:
+- FastAPI sur `127.0.0.1:8000`
+- Frontend sur `127.0.0.1:5173`
 
 ## CLIs (sync / ops)
 

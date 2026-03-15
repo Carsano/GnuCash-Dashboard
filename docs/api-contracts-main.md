@@ -2,17 +2,32 @@
 
 ## Summary
 
-- No HTTP/REST API surface was detected in this repository (no FastAPI/Flask/Django routes).
+- HTTP API surface exists and is implemented with FastAPI.
 - Primary interaction surfaces are:
-  - Streamlit UI (human-facing).
-  - CLI entry points (ops/sync tools).
+  - HTTP API (`/api/v1/*`),
+  - React UI (consumer of HTTP API),
+  - CLI entry points (ops/sync tools),
   - PostgreSQL database access (SQL queries via SQLAlchemy).
 
 ## HTTP Endpoints
 
-- **Not detected.**
+Routes are defined in `src/adapters/interface/http_api/router.py` with prefix `/api/v1`.
 
-If an HTTP API is planned but not yet implemented, the best starting point would be to define an OpenAPI contract and introduce an adapter (e.g., FastAPI) that calls existing `src/application/use_cases/*` methods.
+- `GET /health`
+- `GET /meta`
+- `POST /sync/analytics`
+- `GET /accounts`
+- `GET /accounts/tree`
+- `GET /net-worth`
+- `GET /account-balances`
+- `GET /asset-category-breakdown`
+- `GET /cashflow/asset-selection`
+- `GET /cashflow`
+- `GET /budgets`
+- `GET /budget/applicability`
+- `GET /budget/month-view`
+- `GET /diagnostics/env`
+- `GET /diagnostics/db`
 
 ## CLI Interfaces
 
@@ -21,7 +36,16 @@ If an HTTP API is planned but not yet implemented, the best starting point would
 - `src.adapters.sync_accounts_cli`
 - `src.adapters.compare_backends_cli`
 
-## Streamlit UI Surface
+## Frontend/API Contract Surface
 
-- Entry point: `src.adapters.interface.streamlit.app`
+- Frontend API queries are implemented in `frontend/src/lib/api/queries.ts`.
+- Development proxy forwards `/api/v1` from Vite to `http://127.0.0.1:8000`.
 
+## Database “Contracts”
+
+Database inputs are effective runtime contracts. Key inputs/controls:
+
+- `GNUCASH_DB_URL`: SQLAlchemy Postgres URL for the GnuCash source.
+- `ANALYTICS_DB_URL`: SQLAlchemy Postgres URL for the analytics layer.
+- `GNUCASH_BACKEND`: `sqlalchemy` (default), `analytics`, or `piecash`.
+- `ANALYTICS_READ_MODE`: `tables` (default) or `views`.

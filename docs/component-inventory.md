@@ -1,19 +1,20 @@
 # Component Inventory
 
-## Streamlit UI Pages
+## React UI Pages
 
-- `Dashboard` → `src/adapters/interface/streamlit/page_renderers/dashboard.py`
-- `Accounts` → `src/adapters/interface/streamlit/page_renderers/accounts.py`
-- `Cashflow` → `src/adapters/interface/streamlit/page_renderers/cashflow.py`
-- `Budget` → `src/adapters/interface/streamlit/page_renderers/budget.py`
-- `Diagnostics` → `src/adapters/interface/streamlit/page_renderers/diagnostics.py`
+- `DashboardPage` → `frontend/src/pages/DashboardPage.tsx`
+- `AccountsPage` → `frontend/src/pages/AccountsPage.tsx`
+- `CashflowPage` → `frontend/src/pages/CashflowPage.tsx`
+- `BudgetPage` → `frontend/src/pages/BudgetPage.tsx`
+- `DiagnosticsPage` → `frontend/src/pages/DiagnosticsPage.tsx`
 
-## Shared UI Components / Helpers
+## API Adapter Components
 
-- Streamlit session + caching helpers: `src/adapters/interface/streamlit/shared.py`
-- Cashflow Sankey model + Plotly figure builder: `src/adapters/interface/streamlit/sankey_cashflow.py`
+- FastAPI app factory: `src/adapters/interface/http_api/app.py`
+- FastAPI routes: `src/adapters/interface/http_api/router.py`
+- Dependency providers: `src/adapters/interface/http_api/dependencies.py`
+- Serialization helpers: `src/adapters/interface/http_api/serialization.py`
 
 ## CLI Components
 
-- Sync jobs and ops tools under `src/adapters/` (see `docs/api-contracts-main.md`).
-
+- Sync jobs and ops tools under `src/adapters/`.

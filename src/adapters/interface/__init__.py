@@ -1,3 +1,3 @@
-"""Interface layer package (Streamlit, CLI, other entry points)."""
+"""Interface layer package (HTTP API and other entry points)."""
 
 __all__ = []

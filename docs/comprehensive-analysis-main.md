@@ -3,15 +3,15 @@
 ## Scope and Scan Notes
 
 - **Scan level:** `exhaustive`
-- **Source files read:** `src/**/*.py` (67 files, ~7144 LOC) + `tests/**/*.py` (29 files, ~2509 LOC)
 - **Repository type:** monolith
-- **Project type:** backend (with Streamlit UI adapter + CLI adapters)
+- **Project type:** backend + web frontend (FastAPI adapter + React UI + CLI adapters)
 
 ## Architecture and Data Flow (High Level)
 
 1. **Adapters**
-   - Streamlit UI: `src/adapters/interface/streamlit/app.py` wires pages and calls application use cases via helper functions in `shared.py`.
+   - FastAPI HTTP adapter: `src/adapters/interface/http_api/` maps requests to application use cases.
    - CLI modules: `src/adapters/*.py` invoke use cases for sync/ops tasks.
+   - React UI: `frontend/src/` fetches `/api/v1/*` endpoints.
 2. **Application (Use Cases + Ports)**
    - Use cases live in `src/application/use_cases/` and depend on `src/application/ports/` (protocols).
 3. **Infrastructure**
@@ -22,11 +22,11 @@
 
 ## Key Execution Paths
 
-### Streamlit UI
+### HTTP API + React UI
 
-- Entry: `uv run python -m streamlit run src/adapters/interface/streamlit/app.py`
-- Navigation: sidebar radio selects page renderer (dashboard/accounts/cashflow/budget/diagnostics).
-- Data access pattern: Streamlit page → `shared.py` cached loader → application use case → repository/port → SQLAlchemy query.
+- API entry: `uv run uvicorn src.adapters.interface.http_api.main:app --host 127.0.0.1 --port 8000 --reload`
+- Frontend entry: `frontend/src/main.tsx` (Vite dev server, proxy `/api/v1` to backend).
+- Data access pattern: React page → API query hook → FastAPI route → application use case → repository/port → SQLAlchemy query.
 
 ### Sync / Ops CLIs
 
@@ -59,16 +59,15 @@ Sanity-check CLI:
 
 ## Authentication / Security
 
-- No authentication/authorization subsystem detected (no HTTP API; no auth libraries/patterns found).
-- Primary security boundary is the database credentials in `.env` / env vars.
+- No authentication/authorization subsystem detected.
+- Primary security boundary is database credentials in `.env` / env vars.
 
 ## Protocols / Schemas
 
-- No OpenAPI/Swagger/GraphQL/Protobuf schema artifacts detected.
+- No OpenAPI artifact committed, though routes are defined in FastAPI router code.
 
 ## CI/CD and Deployment Automation
 
 - No CI pipelines detected (`.github/workflows` not present).
 - No containerization detected (no `Dockerfile` or `docker-compose.*`).
-- Deployment appears environment-driven: provide Postgres connectivity + run Streamlit/CLIs.
-
+- Deployment appears environment-driven: provide Postgres connectivity + run API/frontend/CLIs.

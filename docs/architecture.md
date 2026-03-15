@@ -2,9 +2,10 @@
 
 ## Executive Summary
 
-GnuCash-Dashboard is a Python application that provides:
+GnuCash-Dashboard provides:
 
-- a Streamlit dashboard UI for exploring GnuCash data,
+- a FastAPI HTTP API for financial and diagnostics data,
+- a React frontend consuming `/api/v1/*`,
 - a set of CLI tools for syncing/mirroring GnuCash tables into an analytics schema,
 - optional alternate backends for reading data (`sqlalchemy`, `analytics`, `piecash`).
 
@@ -13,14 +14,15 @@ The codebase follows a ports-and-adapters (hexagonal) structure: adapters call a
 ## Technology Stack
 
 - Python 3.11, `uv`
-- Streamlit + Plotly (UI)
+- FastAPI + Uvicorn (HTTP API)
+- React + Vite + TypeScript (frontend)
 - SQLAlchemy (<2.0) + Postgres drivers (`psycopg`, `psycopg2`)
 - pytest + pytest-cov
 
 ## Architecture Pattern
 
-- **Adapters** (`src/adapters/`): Streamlit UI + CLIs.
-- **Application** (`src/application/use_cases/`): orchestrates use cases; returns DTOs for UI/CLI consumption.
+- **Adapters** (`src/adapters/`): HTTP API + CLIs.
+- **Application** (`src/application/use_cases/`): orchestrates use cases; returns DTOs for API consumption.
 - **Ports** (`src/application/ports/`): Protocols defining boundary contracts (DB, repos, sync).
 - **Infrastructure** (`src/infrastructure/`): concrete SQLAlchemy repositories, engine creation, backend selection, DI container.
 - **Domain** (`src/domain/`): immutable dataclasses and domain services/policies.
@@ -37,16 +39,17 @@ Sync strategy highlights:
 
 ## API Design
 
-- No HTTP API endpoints detected.
-- Primary “interfaces” are:
-  - Streamlit UI,
+- HTTP API routes are implemented in `src/adapters/interface/http_api/router.py`.
+- Primary interfaces are:
+  - FastAPI HTTP endpoints,
+  - React frontend (via HTTP calls),
   - CLI entry points,
   - database schema and views/tables.
 
 ## Component Overview
 
-- Streamlit pages live in `src/adapters/interface/streamlit/page_renderers/`.
-- Shared Streamlit logic/caching in `src/adapters/interface/streamlit/shared.py`.
+- HTTP API adapter: `src/adapters/interface/http_api/`
+- Frontend app: `frontend/src/`
 
 ## Source Tree
 
@@ -64,4 +67,3 @@ See `docs/deployment-configuration.md`.
 
 - Unit/contract tests across layers under `tests/`.
 - Repository behavior is validated via stubs/mocks; ordering is typically normalized (sorted) for deterministic assertions.
-
