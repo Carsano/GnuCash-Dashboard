@@ -1,5 +1,12 @@
 """Domain services package."""
 
+from .account_categorization import (
+    BUSINESS_CATEGORIES,
+    RULES,
+    categorize_account,
+    categorize_accounts,
+    categorize_accounts_to_dataframe,
+)
 from .finance import (
     compute_asset_category_breakdown,
     compute_net_worth_summary,
@@ -9,6 +16,11 @@ from .normalization import normalize_mnemonic, normalize_namespace
 from .validation import validate_balance_sign
 
 __all__ = [
+    "BUSINESS_CATEGORIES",
+    "RULES",
+    "categorize_account",
+    "categorize_accounts",
+    "categorize_accounts_to_dataframe",
     "build_price_map",
     "convert_balance",
     "compute_net_worth_summary",
