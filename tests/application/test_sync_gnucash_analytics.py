@@ -48,7 +48,18 @@ def test_sync_gnucash_analytics_copies_tables(tmp_path: Path) -> None:
         count = conn.execute(
             text("SELECT COUNT(*) AS count FROM accounts")
         ).first()
+        placeholder = conn.execute(
+            text(
+                """
+                SELECT is_placeholder
+                FROM accounts
+                WHERE guid = :guid
+                """
+            ),
+            {"guid": "acc-1"},
+        ).first()
     assert count.count == 2
+    assert bool(placeholder.is_placeholder) is True
 
 
 def _seed_source_db(engine) -> None:
@@ -61,6 +72,18 @@ def _seed_source_db(engine) -> None:
                 account_type TEXT,
                 commodity_guid TEXT,
                 parent_guid TEXT
+            )
+            """
+        )
+        conn.exec_driver_sql(
+            """
+            CREATE TABLE slots (
+                id INTEGER PRIMARY KEY,
+                obj_guid TEXT,
+                name TEXT,
+                slot_type INTEGER,
+                int64_val INTEGER,
+                string_val TEXT
             )
             """
         )
@@ -130,6 +153,22 @@ def _seed_source_db(engine) -> None:
                     "parent_guid": "acc-1",
                 },
             ],
+        )
+        conn.execute(
+            text(
+                """
+                INSERT INTO slots (id, obj_guid, name, slot_type, int64_val, string_val)
+                VALUES (:id, :obj_guid, :name, :slot_type, :int64_val, :string_val)
+                """
+            ),
+            {
+                "id": 1,
+                "obj_guid": "acc-1",
+                "name": "placeholder",
+                "slot_type": 4,
+                "int64_val": 1,
+                "string_val": None,
+            },
         )
         conn.execute(
             text(

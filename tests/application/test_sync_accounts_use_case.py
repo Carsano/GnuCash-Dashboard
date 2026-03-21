@@ -75,8 +75,8 @@ def test_run_handles_empty_source_without_insert() -> None:
     assert result.inserted_count == 0
 
 
-def test_run_filters_hex_named_accounts() -> None:
-    """Accounts with hex-only names should be filtered out."""
+def test_run_keeps_hex_named_accounts() -> None:
+    """Synchronization should keep all source accounts, including opaque names."""
     source_port, destination_port = _build_ports(
         accounts=[
             AccountRecord(
@@ -111,6 +111,6 @@ def test_run_filters_hex_named_accounts() -> None:
     result = use_case.run()
 
     passed_accounts = destination_port.refresh_accounts.call_args.args[0]
-    assert [acc.guid for acc in passed_accounts] == ["a", "c"]
+    assert [acc.guid for acc in passed_accounts] == ["a", "b", "c"]
     assert result.source_count == 3
-    assert result.inserted_count == 2
+    assert result.inserted_count == 3

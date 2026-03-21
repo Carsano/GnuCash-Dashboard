@@ -60,6 +60,7 @@ class _AccountsUseCase:
                 account_type="ASSET",
                 commodity_guid="eur",
                 parent_guid=None,
+                is_placeholder=True,
             ),
             AccountDTO(
                 guid="a-guid",
@@ -67,6 +68,7 @@ class _AccountsUseCase:
                 account_type="ASSET",
                 commodity_guid="eur",
                 parent_guid=None,
+                is_placeholder=False,
             ),
         ]
 
@@ -80,6 +82,7 @@ class _AccountsTreeUseCase:
                 account_type="ASSET",
                 commodity_guid="eur",
                 parent_guid="root",
+                is_placeholder=False,
             ),
             AccountDTO(
                 guid="root",
@@ -87,6 +90,7 @@ class _AccountsTreeUseCase:
                 account_type="ASSET",
                 commodity_guid="eur",
                 parent_guid=None,
+                is_placeholder=True,
             ),
         ]
 
@@ -322,6 +326,8 @@ def test_accounts_endpoint_returns_deterministic_order() -> None:
     assert response.status_code == 200
     payload = response.json()
     assert [row["name"] for row in payload["accounts"]] == ["Alpha", "zeta"]
+    assert payload["accounts"][0]["is_placeholder"] is False
+    assert payload["accounts"][1]["is_placeholder"] is True
 
 
 def test_net_worth_and_cashflow_serialize_decimal_as_strings() -> None:

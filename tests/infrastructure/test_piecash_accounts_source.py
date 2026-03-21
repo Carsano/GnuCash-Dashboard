@@ -11,19 +11,35 @@ def test_fetch_accounts_reads_book(monkeypatch, tmp_path):
     close_called = {"value": False}
 
     class _Account:
-        def __init__(self, guid, name, account_type, commodity, parent=None):
+        def __init__(
+            self,
+            guid,
+            name,
+            account_type,
+            commodity,
+            parent=None,
+            placeholder=False,
+        ):
             self.guid = guid
             self.name = name
             self.type = account_type
             self.commodity = commodity
             self.parent = parent
+            self.placeholder = placeholder
 
     class _Book:
         def __init__(self):
             commodity = SimpleNamespace(guid="USD")
             parent = _Account("a", "Root", "ROOT", None)
             self.accounts = [
-                _Account("b", "Child", "BANK", commodity, parent),
+                _Account(
+                    "b",
+                    "Child",
+                    "BANK",
+                    commodity,
+                    parent,
+                    placeholder=True,
+                ),
                 parent,
             ]
 
@@ -47,4 +63,5 @@ def test_fetch_accounts_reads_book(monkeypatch, tmp_path):
     records = source.fetch_accounts()
 
     assert [record.guid for record in records] == ["a", "b"]
+    assert records[1].is_placeholder is True
     assert close_called["value"] is True

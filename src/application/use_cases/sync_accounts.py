@@ -1,20 +1,18 @@
-"""Use case for synchronizing GnuCash accounts into the analytics database.
+"""Use case for synchronizing GnuCash accounts into the analytics mirror.
 
 This module defines a simple ETL-style use case that:
 
 * reads accounts from the configured source adapter;
-* ensures an analytics table for dimensional accounts exists;
-* truncates the analytics table and reloads its content from the source.
+* ensures the canonical analytics accounts table exists;
+* truncates the mirror and reloads its content from the source.
 """
 
 from dataclasses import dataclass
 
 from src.application.ports.accounts_sync import (
-    AccountRecord,
     AccountsDestinationPort,
     AccountsSourcePort,
 )
-from src.domain.policies.account_filters import is_valid_account_name
 from src.infrastructure.logging.logger import get_app_logger
 
 
@@ -32,7 +30,7 @@ class SyncAccountsResult:
 
 
 class SyncAccountsUseCase:
-    """Synchronize GnuCash accounts into the analytics database.
+    """Synchronize GnuCash accounts into the analytics mirror.
 
     The use case depends on ports to remain decoupled from concrete
     database drivers or storage configuration details.
@@ -68,42 +66,18 @@ class SyncAccountsUseCase:
         self._logger.info(
             f"Fetched {len(source_accounts)} accounts from source"
         )
-        accounts = self._filter_accounts(source_accounts)
         self._destination_port.prepare_destination()
-        inserted_count = self._destination_port.refresh_accounts(accounts)
+        inserted_count = self._destination_port.refresh_accounts(
+            sorted(source_accounts, key=lambda row: row.guid)
+        )
         self._logger.info(
-            f"Inserted {inserted_count} accounts into analytics.accounts_dim"
+            f"Inserted {inserted_count} accounts into analytics.accounts"
         )
 
         return SyncAccountsResult(
             source_count=len(source_accounts),
             inserted_count=inserted_count,
         )
-
-    def _filter_accounts(
-        self,
-        accounts: list[AccountRecord],
-    ) -> list[AccountRecord]:
-        """Filter out accounts with invalid names.
-
-        Args:
-            accounts: Raw records extracted from the GnuCash source.
-
-        Returns:
-            list[AccountRecord]: Records with validated, sorted names.
-        """
-        filtered = []
-        for account in accounts:
-            name = account.name if isinstance(account.name, str) else ""
-            if is_valid_account_name(name):
-                filtered.append(account)
-        filtered = sorted(filtered, key=lambda row: row.guid)
-        filtered_count = len(accounts) - len(filtered)
-        if filtered_count:
-            self._logger.warning(
-                f"Filtered out {filtered_count} accounts with invalid names"
-            )
-        return filtered
 
 
 __all__ = ["SyncAccountsUseCase", "SyncAccountsResult"]

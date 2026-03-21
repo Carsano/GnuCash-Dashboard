@@ -13,6 +13,7 @@ class AccountRecord:
     account_type: str
     commodity_guid: str | None
     parent_guid: str | None
+    is_placeholder: bool = False
 
 
 class AccountsSourcePort(Protocol):

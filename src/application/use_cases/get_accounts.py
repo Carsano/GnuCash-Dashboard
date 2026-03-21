@@ -1,27 +1,21 @@
-"""Use case to read analytics accounts for presentation layers."""
+"""Use case to read imported analytics accounts."""
 
 from typing import List
 
 from src.application.ports.accounts_repository import AccountsRepositoryPort
 from src.domain.models.accounts import AccountDTO
-from src.domain.policies.account_filters import is_valid_account_name
 
 
 class GetAccountsUseCase:
-    """Fetch accounts from the analytics database."""
+    """Fetch accounts from the canonical analytics mirror."""
 
     def __init__(self, repository: AccountsRepositoryPort) -> None:
         """Initialize the use case with its required dependencies."""
         self._repository = repository
 
     def execute(self) -> List[AccountDTO]:
-        """Return every account currently stored in accounts_dim."""
-        accounts = self._repository.fetch_accounts()
-        return [
-            account
-            for account in accounts
-            if is_valid_account_name(account.name)
-        ]
+        """Return every account currently stored in the analytics mirror."""
+        return self._repository.fetch_accounts()
 
 
 __all__ = ["GetAccountsUseCase", "AccountDTO"]

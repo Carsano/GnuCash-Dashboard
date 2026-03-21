@@ -1,4 +1,4 @@
-"""SQLAlchemy-backed repository for analytics accounts."""
+"""SQLAlchemy-backed repository for canonical analytics accounts."""
 
 from sqlalchemy import text
 
@@ -8,7 +8,7 @@ from src.domain.models.accounts import AccountDTO
 
 
 class SqlAlchemyAccountsRepository(AccountsRepositoryPort):
-    """Repository backed by SQLAlchemy for analytics accounts."""
+    """Repository backed by SQLAlchemy for canonical analytics accounts."""
 
     def __init__(self, db_port: DatabaseEnginePort) -> None:
         """Initialize the repository.
@@ -19,11 +19,16 @@ class SqlAlchemyAccountsRepository(AccountsRepositoryPort):
         self._db_port = db_port
 
     def fetch_accounts(self) -> list[AccountDTO]:
-        """Return analytics accounts from the database."""
+        """Return canonical analytics accounts from the database."""
         query = text(
             """
-            SELECT guid, name, account_type, commodity_guid, parent_guid
-            FROM accounts_dim
+            SELECT guid,
+                   name,
+                   account_type,
+                   commodity_guid,
+                   parent_guid,
+                   COALESCE(is_placeholder, FALSE) AS is_placeholder
+            FROM accounts
             ORDER BY name
             """
         )
@@ -37,6 +42,7 @@ class SqlAlchemyAccountsRepository(AccountsRepositoryPort):
                 account_type=row.account_type,
                 commodity_guid=row.commodity_guid,
                 parent_guid=row.parent_guid,
+                is_placeholder=bool(row.is_placeholder),
             )
             for row in rows
         ]

@@ -8,8 +8,8 @@ from src.application.use_cases.get_accounts import (
 )
 
 
-def test_execute_returns_accounts_from_analytics_db() -> None:
-    """Use case should return AccountDTO objects for every analytics entry."""
+def test_execute_returns_all_accounts_from_analytics_db() -> None:
+    """Use case should return every imported analytics account."""
     rows = [
         AccountDTO(
             guid="a",
@@ -17,6 +17,7 @@ def test_execute_returns_accounts_from_analytics_db() -> None:
             account_type="BANK",
             commodity_guid="USD",
             parent_guid=None,
+            is_placeholder=False,
         ),
         AccountDTO(
             guid="hex",
@@ -24,6 +25,7 @@ def test_execute_returns_accounts_from_analytics_db() -> None:
             account_type="BANK",
             commodity_guid="USD",
             parent_guid=None,
+            is_placeholder=True,
         ),
         AccountDTO(
             guid="b",
@@ -31,6 +33,7 @@ def test_execute_returns_accounts_from_analytics_db() -> None:
             account_type="BANK",
             commodity_guid="USD",
             parent_guid="a",
+            is_placeholder=False,
         ),
     ]
     repository = MagicMock()
@@ -40,20 +43,5 @@ def test_execute_returns_accounts_from_analytics_db() -> None:
 
     result = use_case.execute()
 
-    assert result == [
-        AccountDTO(
-            guid="a",
-            name="Checking",
-            account_type="BANK",
-            commodity_guid="USD",
-            parent_guid=None,
-        ),
-        AccountDTO(
-            guid="b",
-            name="Savings",
-            account_type="BANK",
-            commodity_guid="USD",
-            parent_guid="a",
-        ),
-    ]
+    assert result == rows
     repository.fetch_accounts.assert_called_once_with()

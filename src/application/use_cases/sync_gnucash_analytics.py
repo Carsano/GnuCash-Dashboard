@@ -74,6 +74,13 @@ class SyncGnuCashAnalyticsUseCase:
 
         with target_engine.begin() as conn:
             conn.exec_driver_sql(spec.create_sql)
+            if spec.name == "accounts":
+                self._ensure_column(
+                    conn,
+                    table_name="accounts",
+                    column_name="is_placeholder",
+                    column_type="BOOLEAN DEFAULT FALSE",
+                )
             if spec.name == "transactions":
                 self._ensure_column(
                     conn,
@@ -84,8 +91,11 @@ class SyncGnuCashAnalyticsUseCase:
             self._truncate_table(conn, spec.name)
 
         total = 0
+        select_sql = spec.select_sql
+        if spec.name == "accounts":
+            select_sql = self._build_accounts_select_sql(source_engine)
         with source_engine.connect() as source_conn:
-            result = source_conn.execute(text(spec.select_sql))
+            result = source_conn.execute(text(select_sql))
             while True:
                 rows = result.fetchmany(self._chunk_size)
                 if not rows:
@@ -145,6 +155,78 @@ class SyncGnuCashAnalyticsUseCase:
             f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}"
         )
 
+    @staticmethod
+    def _build_accounts_select_sql(source_engine) -> str:
+        try:
+            with source_engine.connect() as conn:
+                if source_engine.dialect.name == "sqlite":
+                    columns = {
+                        row[1].lower()
+                        for row in conn.exec_driver_sql(
+                            "PRAGMA table_info(slots)"
+                        ).all()
+                    }
+                else:
+                    columns = {
+                        row.column_name.lower()
+                        for row in conn.execute(
+                            text(
+                                """
+                                SELECT column_name
+                                FROM information_schema.columns
+                                WHERE table_name = 'slots'
+                                """
+                            )
+                        ).all()
+                    }
+        except Exception:
+            return """
+                SELECT guid,
+                       name,
+                       account_type,
+                       commodity_guid,
+                       parent_guid,
+                       FALSE AS is_placeholder
+                FROM accounts
+            """
+
+        required = {"obj_guid", "name", "string_val", "int64_val"}
+        if not required.issubset(columns):
+            return """
+                SELECT guid,
+                       name,
+                       account_type,
+                       commodity_guid,
+                       parent_guid,
+                       FALSE AS is_placeholder
+                FROM accounts
+            """
+
+        return """
+            SELECT a.guid,
+                   a.name,
+                   a.account_type,
+                   a.commodity_guid,
+                   a.parent_guid,
+                   CASE
+                       WHEN EXISTS (
+                           SELECT 1
+                           FROM slots s
+                           WHERE s.obj_guid = a.guid
+                             AND LOWER(s.name) = 'placeholder'
+                             AND (
+                                 COALESCE(s.int64_val, 0) <> 0
+                                 OR LOWER(COALESCE(s.string_val, '')) IN (
+                                     '1', 'true', 't', 'yes', 'y'
+                                 )
+                             )
+                       )
+                       THEN TRUE
+                       ELSE FALSE
+                   END AS is_placeholder
+            FROM accounts a
+        """
+
 
 @dataclass(frozen=True)
 class SyncTableSpec:
@@ -160,7 +242,12 @@ _SYNC_SPECS = (
     SyncTableSpec(
         name="accounts",
         select_sql="""
-            SELECT guid, name, account_type, commodity_guid, parent_guid
+            SELECT guid,
+                   name,
+                   account_type,
+                   commodity_guid,
+                   parent_guid,
+                   FALSE AS is_placeholder
             FROM accounts
         """,
         insert_sql="""
@@ -169,14 +256,16 @@ _SYNC_SPECS = (
                 name,
                 account_type,
                 commodity_guid,
-                parent_guid
+                parent_guid,
+                is_placeholder
             )
             VALUES (
                 :guid,
                 :name,
                 :account_type,
                 :commodity_guid,
-                :parent_guid
+                :parent_guid,
+                :is_placeholder
             )
         """,
         create_sql="""
@@ -185,7 +274,8 @@ _SYNC_SPECS = (
                 name TEXT,
                 account_type TEXT,
                 commodity_guid TEXT,
-                parent_guid TEXT
+                parent_guid TEXT,
+                is_placeholder BOOLEAN DEFAULT FALSE
             )
         """,
     ),

@@ -24,7 +24,12 @@ class SqlAlchemyAccountsTreeRepository(AccountsTreeRepositoryPort):
         """Return accounts from the mirrored GnuCash table."""
         query = text(
             """
-            SELECT guid, name, account_type, commodity_guid, parent_guid
+            SELECT guid,
+                   name,
+                   account_type,
+                   commodity_guid,
+                   parent_guid,
+                   COALESCE(is_placeholder, FALSE) AS is_placeholder
             FROM accounts
             ORDER BY name
             """
@@ -39,10 +44,10 @@ class SqlAlchemyAccountsTreeRepository(AccountsTreeRepositoryPort):
                 account_type=row.account_type,
                 commodity_guid=row.commodity_guid,
                 parent_guid=row.parent_guid,
+                is_placeholder=bool(row.is_placeholder),
             )
             for row in rows
         ]
 
 
 __all__ = ["SqlAlchemyAccountsTreeRepository"]
-

@@ -4,7 +4,6 @@ from src.application.ports.accounts_tree_repository import (
     AccountsTreeRepositoryPort,
 )
 from src.domain.models.accounts import AccountDTO
-from src.domain.policies.account_filters import is_valid_account_name
 
 
 class GetAccountsTreeUseCase:
@@ -16,13 +15,7 @@ class GetAccountsTreeUseCase:
 
     def execute(self) -> list[AccountDTO]:
         """Return every account currently stored in the analytics mirror."""
-        accounts = self._repository.fetch_accounts_tree()
-        return [
-            account
-            for account in accounts
-            if is_valid_account_name(account.name)
-        ]
+        return self._repository.fetch_accounts_tree()
 
 
 __all__ = ["GetAccountsTreeUseCase"]
-
