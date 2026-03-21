@@ -14,6 +14,10 @@ from .sync_gnucash_analytics import (
     SyncGnuCashAnalyticsUseCase,
     SyncGnuCashAnalyticsResult,
 )
+from .sync_account_categories import (
+    SyncAccountCategoriesUseCase,
+    SyncAccountCategoriesResult,
+)
 from src.domain.models.accounts import AccountDTO
 from src.domain.models.accounts import AccountBalanceDTO
 from src.domain.models.finance import (
@@ -46,4 +50,6 @@ __all__ = [
     "GetBudgetMonthViewUseCase",
     "SyncGnuCashAnalyticsUseCase",
     "SyncGnuCashAnalyticsResult",
+    "SyncAccountCategoriesUseCase",
+    "SyncAccountCategoriesResult",
 ]
