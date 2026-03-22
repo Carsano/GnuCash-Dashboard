@@ -4,12 +4,18 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
 
 from src.application.ports.database import DatabaseEnginePort
+from src.domain.constants import DEFAULT_ASSET_TYPES, DEFAULT_LIABILITY_TYPES
 from src.domain.policies.account_filters import is_valid_account_name
-from src.domain.services.account_categorization import categorize_account
+from src.domain.services.account_categorization import (
+    categorize_account,
+    categorize_balance_sheet_side,
+)
 from src.infrastructure.logging.logger import get_app_logger
+
+TRACKED_ACCOUNT_TYPES = DEFAULT_ASSET_TYPES + DEFAULT_LIABILITY_TYPES
 
 
 CREATE_ACCOUNTS_BUSINESS_SQL = """
@@ -19,7 +25,8 @@ CREATE TABLE IF NOT EXISTS accounts_business (
     account_type TEXT NOT NULL,
     parent_guid TEXT,
     is_placeholder BOOLEAN DEFAULT FALSE,
-    business_category TEXT NOT NULL
+    business_category TEXT NOT NULL,
+    balance_sheet_category TEXT NOT NULL
 )
 """
 
@@ -31,9 +38,9 @@ SELECT_ACCOUNTS_SQL = text(
            parent_guid,
            COALESCE(is_placeholder, FALSE) AS is_placeholder
     FROM accounts
-    WHERE account_type IN ('ASSET', 'STOCK', 'CASH', 'BANK', 'MUTUAL')
+    WHERE account_type IN :account_types
     """
-)
+).bindparams(bindparam("account_types", expanding=True))
 
 INSERT_ACCOUNTS_BUSINESS_SQL = text(
     """
@@ -43,7 +50,8 @@ INSERT_ACCOUNTS_BUSINESS_SQL = text(
         account_type,
         parent_guid,
         is_placeholder,
-        business_category
+        business_category,
+        balance_sheet_category
     )
     VALUES (
         :guid,
@@ -51,7 +59,8 @@ INSERT_ACCOUNTS_BUSINESS_SQL = text(
         :account_type,
         :parent_guid,
         :is_placeholder,
-        :business_category
+        :business_category,
+        :balance_sheet_category
     )
     """
 )
@@ -81,7 +90,10 @@ class SyncAccountCategoriesUseCase:
         engine = self._db_port.get_analytics_engine()
 
         with engine.connect() as conn:
-            rows = conn.execute(SELECT_ACCOUNTS_SQL).all()
+            rows = conn.execute(
+                SELECT_ACCOUNTS_SQL,
+                {"account_types": list(TRACKED_ACCOUNT_TYPES)},
+            ).all()
 
         payload = [
             {
@@ -94,6 +106,9 @@ class SyncAccountCategoriesUseCase:
                     name=row.name,
                     account_type=row.account_type,
                 ),
+                "balance_sheet_category": categorize_balance_sheet_side(
+                    row.account_type
+                ),
             }
             for row in rows
             if is_valid_account_name(row.name)
@@ -105,6 +120,12 @@ class SyncAccountCategoriesUseCase:
                 conn,
                 table_name="accounts_business",
                 column_name="parent_guid",
+                column_type="TEXT",
+            )
+            self._ensure_column(
+                conn,
+                table_name="accounts_business",
+                column_name="balance_sheet_category",
                 column_type="TEXT",
             )
             self._truncate_table(conn)

@@ -7,6 +7,8 @@ import re
 import unicodedata
 from typing import Any, Iterable, Mapping
 
+from src.domain.constants import DEFAULT_ASSET_TYPES, DEFAULT_LIABILITY_TYPES
+
 
 BUSINESS_CATEGORIES = (
     "Immobilier",
@@ -14,6 +16,16 @@ BUSINESS_CATEGORIES = (
     "Actions & Fonds",
     "Comptes Bancaires",
     "Crypto",
+    "Cartes de Crédit",
+    "Emprunts Immobiliers",
+    "Autres Emprunts",
+    "Dettes Court Terme",
+    "Autres",
+)
+
+BALANCE_SHEET_CATEGORIES = (
+    "Actif",
+    "Dette",
     "Autres",
 )
 
@@ -27,6 +39,10 @@ class AccountCategoryRuleSet:
     actions_fonds: frozenset[str]
     comptes_bancaires: frozenset[str]
     crypto: frozenset[str]
+    cartes_credit: frozenset[str]
+    emprunts_immobiliers: frozenset[str]
+    autres_emprunts: frozenset[str]
+    dettes_court_terme: frozenset[str]
 
 
 def _normalize_text(value: str) -> str:
@@ -111,6 +127,8 @@ RULES = AccountCategoryRuleSet(
             "Orphelin-EUR",
             "Espèces Trade Republic",
             "Argent du porte-monnaie",
+            "Crypto Cash",
+            "Crypto Card",
         )
     ),
     crypto=frozenset(
@@ -119,9 +137,44 @@ RULES = AccountCategoryRuleSet(
             "Crypto.com Invest",
             "Binance",
             "Exodus",
-            "Crypto Cash",
-            "Crypto Card",
             "Cryptomonnaies",
+        )
+    ),
+    cartes_credit=frozenset(
+        _normalize_text(name)
+        for name in (
+            "Carte de crédit",
+            "Cartes de crédit",
+            "Credit card",
+            "Carte bancaire différée",
+        )
+    ),
+    emprunts_immobiliers=frozenset(
+        _normalize_text(name)
+        for name in (
+            "Prêt Parking Modulimmo",
+            "Pret Appartement Modulimmo",
+            "Pret appartement PEL",
+            "Pret Travaux Appartement",
+            "Emprunts",
+        )
+    ),
+    autres_emprunts=frozenset(
+        _normalize_text(name)
+        for name in (
+            "Prêt personnel",
+            "Pret personnel",
+            "Prêt conso",
+            "Pret conso",
+            "Loan",
+        )
+    ),
+    dettes_court_terme=frozenset(
+        _normalize_text(name)
+        for name in (
+            "Fournisseurs",
+            "Dettes fiscales",
+            "Dettes sociales",
         )
     ),
 )
@@ -137,6 +190,22 @@ _LIVRET_KEYWORDS = tuple(
 _CRYPTO_KEYWORDS = tuple(
     _normalize_text(value)
     for value in ("crypto", "bitcoin", "ethereum", "btc", "eth")
+)
+_CREDIT_CARD_KEYWORDS = tuple(
+    _normalize_text(value)
+    for value in ("carte de credit", "carte", "credit card")
+)
+_MORTGAGE_KEYWORDS = tuple(
+    _normalize_text(value)
+    for value in ("pret immo", "emprunt", "modulimmo", "pel", "travaux")
+)
+_LOAN_KEYWORDS = tuple(
+    _normalize_text(value)
+    for value in ("pret", "loan", "credit")
+)
+_SHORT_TERM_DEBT_KEYWORDS = tuple(
+    _normalize_text(value)
+    for value in ("fournisseur", "dettes", "urssaf", "impot")
 )
 
 
@@ -154,7 +223,7 @@ def categorize_account(name: str, account_type: str) -> str:
         One of the supported business categories.
     """
     normalized_name = _normalize_text(name)
-    _ = account_type.strip().upper()
+    normalized_type = account_type.strip().upper()
 
     if normalized_name in RULES.immobilier:
         return "Immobilier"
@@ -166,6 +235,14 @@ def categorize_account(name: str, account_type: str) -> str:
         return "Comptes Bancaires"
     if normalized_name in RULES.crypto:
         return "Crypto"
+    if normalized_name in RULES.cartes_credit:
+        return "Cartes de Crédit"
+    if normalized_name in RULES.emprunts_immobiliers:
+        return "Immobilier"
+    if normalized_name in RULES.autres_emprunts:
+        return "Autres Emprunts"
+    if normalized_name in RULES.dettes_court_terme:
+        return "Dettes Court Terme"
 
     if any(keyword in normalized_name for keyword in _CRYPTO_KEYWORDS):
         return "Crypto"
@@ -173,7 +250,35 @@ def categorize_account(name: str, account_type: str) -> str:
         return "Immobilier"
     if any(keyword in normalized_name for keyword in _LIVRET_KEYWORDS):
         return "Livrets"
+    if normalized_type in DEFAULT_LIABILITY_TYPES:
+        if any(
+            keyword in normalized_name
+            for keyword in _CREDIT_CARD_KEYWORDS
+        ):
+            return "Cartes de Crédit"
+        if any(
+            keyword in normalized_name
+            for keyword in _MORTGAGE_KEYWORDS
+        ):
+            return "Emprunts Immobiliers"
+        if any(
+            keyword in normalized_name
+            for keyword in _SHORT_TERM_DEBT_KEYWORDS
+        ):
+            return "Dettes Court Terme"
+        if any(keyword in normalized_name for keyword in _LOAN_KEYWORDS):
+            return "Autres Emprunts"
 
+    return "Autres"
+
+
+def categorize_balance_sheet_side(account_type: str) -> str:
+    """Return whether an account belongs to assets or debts."""
+    normalized_type = account_type.strip().upper()
+    if normalized_type in DEFAULT_ASSET_TYPES:
+        return "Actif"
+    if normalized_type in DEFAULT_LIABILITY_TYPES:
+        return "Dette"
     return "Autres"
 
 
@@ -210,6 +315,9 @@ def categorize_accounts(
                 **item,
                 "business_category": categorize_account(
                     name=name,
+                    account_type=account_type,
+                ),
+                "balance_sheet_category": categorize_balance_sheet_side(
                     account_type=account_type,
                 ),
             }

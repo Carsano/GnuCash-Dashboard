@@ -18,6 +18,10 @@ from .sync_account_categories import (
     SyncAccountCategoriesUseCase,
     SyncAccountCategoriesResult,
 )
+from .sync_account_daily_history import (
+    SyncAccountDailyHistoryUseCase,
+    SyncAccountDailyHistoryResult,
+)
 from src.domain.models.accounts import AccountDTO
 from src.domain.models.accounts import AccountBalanceDTO
 from src.domain.models.finance import (
@@ -52,4 +56,6 @@ __all__ = [
     "SyncGnuCashAnalyticsResult",
     "SyncAccountCategoriesUseCase",
     "SyncAccountCategoriesResult",
+    "SyncAccountDailyHistoryUseCase",
+    "SyncAccountDailyHistoryResult",
 ]

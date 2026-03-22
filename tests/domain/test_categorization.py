@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from src.domain.services.account_categorization import (
     categorize_account,
     categorize_accounts,
+    categorize_balance_sheet_side,
 )
 
 
@@ -20,11 +21,21 @@ def test_categorize_account_uses_explicit_mapping() -> None:
     assert categorize_account("Maison", "ASSET") == "Immobilier"
     assert categorize_account("Crédit Mutuel", "BANK") == "Comptes Bancaires"
     assert categorize_account("Binance", "ASSET") == "Crypto"
+    assert categorize_account("Crypto Cash", "BANK") == "Comptes Bancaires"
+    assert categorize_account("Crypto Card", "BANK") == "Comptes Bancaires"
     assert categorize_account("LDD", "ASSET") == "Livrets"
     assert categorize_account("PER Swisslife", "ASSET") == "Actions & Fonds"
     assert categorize_account("AV Linxea", "ASSET") == "Actions & Fonds"
     assert categorize_account("PEG Schmidt", "ASSET") == "Actions & Fonds"
     assert categorize_account("Avances fournisseurs", "ASSET") == "Autres"
+    assert (
+        categorize_account("Carte de crédit", "LIABILITY")
+        == "Cartes de Crédit"
+    )
+    assert (
+        categorize_account("Prêt Parking Modulimmo", "LIABILITY")
+        == "Emprunts Immobiliers"
+    )
 
 
 def test_categorize_account_normalizes_accents_case_and_spaces() -> None:
@@ -47,6 +58,12 @@ def test_categorize_account_falls_back_to_autres() -> None:
     assert categorize_account("Frais pro", "ASSET") == "Autres"
 
 
+def test_categorize_balance_sheet_side_supports_assets_and_debts() -> None:
+    assert categorize_balance_sheet_side("BANK") == "Actif"
+    assert categorize_balance_sheet_side("LIABILITY") == "Dette"
+    assert categorize_balance_sheet_side("UNKNOWN") == "Autres"
+
+
 def test_categorize_accounts_accepts_dicts_and_dataclasses() -> None:
     accounts = [
         {"guid": "1", "name": "Apple", "account_type": "STOCK"},
@@ -61,11 +78,13 @@ def test_categorize_accounts_accepts_dicts_and_dataclasses() -> None:
             "name": "Apple",
             "account_type": "STOCK",
             "business_category": "Actions & Fonds",
+            "balance_sheet_category": "Actif",
         },
         {
             "guid": "2",
             "name": "Maison",
             "account_type": "ASSET",
             "business_category": "Immobilier",
+            "balance_sheet_category": "Actif",
         },
     ]

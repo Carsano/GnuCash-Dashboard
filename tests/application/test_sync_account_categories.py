@@ -36,14 +36,14 @@ def test_sync_account_categories_materializes_business_table(
 
     result = use_case.run()
 
-    assert result.source_count == 5
-    assert result.inserted_count == 4
+    assert result.source_count == 6
+    assert result.inserted_count == 5
 
     with db_port.get_analytics_engine().connect() as conn:
         rows = conn.execute(
             text(
                 """
-                SELECT guid, parent_guid, business_category
+                SELECT guid, parent_guid, business_category, balance_sheet_category
                 FROM accounts_business
                 ORDER BY guid
                 """
@@ -51,13 +51,19 @@ def test_sync_account_categories_materializes_business_table(
         ).all()
 
     assert [
-        (row.guid, row.parent_guid, row.business_category)
+        (
+            row.guid,
+            row.parent_guid,
+            row.business_category,
+            row.balance_sheet_category,
+        )
         for row in rows
     ] == [
-        ("acc-1", None, "Actions & Fonds"),
-        ("acc-2", "root-bank", "Comptes Bancaires"),
-        ("acc-3", None, "Immobilier"),
-        ("acc-4", None, "Autres"),
+        ("acc-1", None, "Actions & Fonds", "Actif"),
+        ("acc-2", "root-bank", "Comptes Bancaires", "Actif"),
+        ("acc-3", None, "Immobilier", "Actif"),
+        ("acc-4", None, "Autres", "Actif"),
+        ("acc-6", None, "Cartes de Crédit", "Dette"),
     ]
 
 
@@ -96,6 +102,7 @@ def test_sync_account_categories_upgrades_existing_table_schema(
         }
 
     assert "parent_guid" in columns
+    assert "balance_sheet_category" in columns
 
 
 def _seed_accounts(engine) -> None:
@@ -170,6 +177,14 @@ def _seed_accounts(engine) -> None:
                     "guid": "acc-5",
                     "name": "80b22cfd37ac483a9a331cb47876e5d4",
                     "account_type": "BANK",
+                    "commodity_guid": "eur",
+                    "parent_guid": None,
+                    "is_placeholder": False,
+                },
+                {
+                    "guid": "acc-6",
+                    "name": "Carte de crédit",
+                    "account_type": "LIABILITY",
                     "commodity_guid": "eur",
                     "parent_guid": None,
                     "is_placeholder": False,
